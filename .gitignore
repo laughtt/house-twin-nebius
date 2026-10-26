@@ -1,0 +1,13 @@
+# private home data, generated output, downloaded weights, build products
+data/
+out/
+service/uploads/
+service/models/
+app/build/
+*.onnx
+*.zip
+__pycache__/
+.DS_Store
+xcuserdata/
+.env
+.claude/
