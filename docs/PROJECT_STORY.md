@@ -42,7 +42,7 @@ Being sure fast is easy. Being sure and right is the job.
 - **Arrival needs a fresh check:** in the middle of a big room nothing is in range, so the robot may keep driving on
   what it knows but may not declare "I'm here" until the walls confirm it.
 
-## Agentic Vision: OpenCV changes what the robot does
+## The agent loop: what the camera sees changes what the robot does
 Several times a second: sense → locate → see → decide → ask → act. OpenCV 5 reads every camera frame (`cvtColor`,
 `inRange`, `calcHist`): which room do these colours look like? That vote moves the robot's belief, and when a frame
 changes the decision, the trace records it. Here, from the live walk, a frame moved its belief to the living room,
@@ -71,7 +71,7 @@ Every question and answer is logged.
 | Part | What it is |
 |---|---|
 | iPhone app (SwiftUI, ARKit) | Records the walk, room taps, recording check and review; login with tokens in the Keychain; My maps |
-| Server (FastAPI on AWS EC2 Graviton4) | Caddy HTTPS, hashed passwords, signed tokens, rate limiting; runs the twin build per upload; Amazon Bedrock (Claude) for the room-measure agent |
+| Server (FastAPI on AWS EC2 Graviton4) | Caddy HTTPS, hashed passwords, signed tokens, rate limiting; runs the twin build per upload; Nemotron for the room-measure agent |
 | Twin build (OpenCV 5) | Depth fusion (`cv.Volume` TSDF, `RgbdNormals`) → floor → walls (`morphologyEx`, `HoughLinesP`) → doors → rooms (`connectedComponents`, `findContours`, `approxPolyDP`) → landmarks (CLIP in `cv.dnn`) → `house.json` and a MuJoCo scene |
 | The brain (`agent/loc/`) | One module per job: the map and fast ray casts (`distanceTransform`), depth reading, spin match, fit check, landmarks |
 | The agent loop (`agent/walk.py`) | OpenCV on the camera, `vision_decision` events, A* routes, the moments it asks a person |
@@ -118,10 +118,9 @@ repo, so anyone can try it in a minute without a phone.
 - Camera place recognition for rooms that look alike to the depth sensor, and glass walls it sees through
 - Room-colour fingerprints from the robot's own camera instead of the twin's
 - The real Microduck as soon as it ships
-- COOL on Graviton for the twin build, with a measured baseline
 - Per-user accounts and S3 storage for scans
-- A household mode: "go check the bedroom", patrol schedules, alerts
+- Patrol schedules and alerts on top of the spoken commands
 
 ## Built With
 OpenCV 5 · Python · NumPy · MuJoCo · Pollen Microduck (`robotd`, `tofd`, `mediad`, ONNX walking policy) · Swift ·
-SwiftUI · ARKit · iPhone LiDAR · FastAPI · Caddy · AWS EC2 Graviton4 · Amazon Bedrock (Claude) · uv · ffmpeg · XcodeGen
+SwiftUI · ARKit · iPhone LiDAR · FastAPI · Caddy · AWS EC2 Graviton4 · NVIDIA Nemotron (Ultra, Omni, Super VL) · Nebius Token Factory (client ready) · uv · ffmpeg · XcodeGen

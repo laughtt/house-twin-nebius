@@ -1,5 +1,5 @@
 """Flight recorder for Pollen's duck-sim: reads the body server (the same `read` robotd uses) at 25 Hz → body.npz
-(time, trunk xyz, quat, the 15 wire joints) for the film, and the latest true pose → truth.json for agent/walk.py.
+(time, trunk xyz, quat, the 15 wire joints) for the film, and the latest true pose → truth.json for agent/walk.py (with the body row, for agent.film --live).
 
 python -m agent.duck_recorder --out out/walk/<house> [--port 7801]
 """
@@ -39,7 +39,7 @@ def main():
             w, x, y, z = r["imu"]["quat"]
             log.append([tick, *r["trunk"], w, x, y, z, *r["positions"]])
             (out / "truth.tmp").write_text(json.dumps({"t": tick, "xyz": r["trunk"],
-                                                       "yaw": math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))}))
+                                                       "yaw": math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)), "row": log[-1]}))
             os.replace(out / "truth.tmp", out / "truth.json")
             if len(log) % 250 == 0:
                 np.save(out / "body.npy", np.array(log))

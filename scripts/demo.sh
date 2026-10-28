@@ -2,6 +2,9 @@
 # Launch the House Twin Patrol demo (see DEMO.md).
 #   scripts/demo.sh offline [house]      self-location, camera + approval tests, fast tests on samples/synth-multi (no phone, robot or AWS)
 #   scripts/demo.sh live [house] [--ask] live walk on Pollen's duck-sim with the camera, then the film
+#                                        (COMMAND="revisa el dormitorio y luego la sala": Nemotron picks the rooms)
+#   scripts/demo.sh voice [house]        the same duck, live: talk to it through the Mac's microphone (or type), watch it in
+#                                        a window; "alto" or "stop" stops it, Ctrl-C ends with its report
 #   scripts/demo.sh server               the app's server on http://127.0.0.1:8790 (needs API_KEY, TOKEN_SECRET, APP_PASSWORD_HASH)
 #   scripts/demo.sh app                  generate the Xcode project and open it
 set -euo pipefail
@@ -30,10 +33,27 @@ live)
     recorder=$!
     trap 'kill $recorder 2>/dev/null || true' EXIT
     sleep 3
-    "${PY[@]}" -m agent.walk --house "$house" --no-standin $ask
+    "${PY[@]}" -m agent.walk --house "$house" --no-standin $ask ${COMMAND:+--command "$COMMAND"}
     kill -TERM $recorder; sleep 2
-    "${PY[@]}" -m agent.film --house "$house" --speed 2
+    uv run --python 3.12 --with-requirements requirements.lock --with pillow==11.3.0 python -m agent.film --house "$house" --speed 2
     echo "trace, summary and film: $out"
+    ;;
+voice)
+    house=${2:-out/houses/lidar-20261024-120616}
+    out=out/walk/$(basename "$house")
+    [ -e "$out" ] && mv "$out" "$out-$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$out" && : > "$out/trace.live.jsonl"
+    (cd "$MICRODUCK" && scripts/duck-sim down >/dev/null 2>&1 || true
+     DUCK_SIM_SCENE=$SCENE DUCK_SIM_CAMERAS=a DUCK_SIM_VIEWER=0 scripts/duck-sim)
+    uv run --python 3.12 --with numpy python -m agent.duck_recorder --out "$out" > /dev/null 2>&1 &
+    recorder=$!
+    trap 'kill $recorder 2>/dev/null || true' EXIT
+    sleep 3
+    uv run --python 3.12 --with-requirements requirements.lock --with pillow==11.3.0 python -m agent.film --house "$house" --live &
+    uv run --python 3.12 --with-requirements requirements.lock --with sounddevice==0.5.2 python -m agent.walk --house "$house" --no-standin --listen
+    kill -TERM $recorder
+    echo "trace, summary and report: $out (close the window to finish)"
+    wait
     ;;
 server)
     : "${API_KEY:?set API_KEY}" "${TOKEN_SECRET:?set TOKEN_SECRET}" "${APP_PASSWORD_HASH:?make one with: python -m service.passwd}"

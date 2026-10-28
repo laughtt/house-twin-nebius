@@ -1,4 +1,4 @@
-"""v0 agent: Claude (Bedrock) picks size references and questions from the frames; plain maths turns
+"""v0 agent: Nemotron VL (Nebius Token Factory) picks size references and questions from the frames; plain maths turns
 model metres into real metres.
 
 python -m v0.agent <session_dir> <room>
@@ -13,9 +13,11 @@ from pathlib import Path
 import cv2 as cv
 import numpy as np
 
-from v0.scan import Scan, read_frames
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from agent import nebius  # noqa: E402
+from v0.scan import Scan, read_frames  # noqa: E402
 
-MODEL = os.environ.get("V0_MODEL", "global.anthropic.claude-opus-5-5")
+MODEL = os.environ.get("V0_MODEL", nebius.P["vl"])
 DEPTH_SIGMA = 0.25  # the small depth model's own metres count as a weak reference
 PRO_SIGMA = 0.10  # Depth Pro's metres: stronger, but it disagreed with the small model by 23 % on a real photo
 LENS_SIGMA = 0.03  # lens + phone swing, left over after every reference
@@ -66,18 +68,16 @@ Call the report tool with:
 5. warnings: anything that makes this unreliable (open plan, mirrors, odd shape, few references, blur)."""
 
 
-def ask_claude(images, objects):
-    import boto3
+def ask_model(images, objects):
     content = []
     for i, img in enumerate(images):
-        content += [{"text": f"Image {i}"},
-                    {"image": {"format": "jpeg", "source": {"bytes": cv.imencode(".jpg", img, [cv.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()}}}]
-    content.append({"text": PROMPT.format(objects=json.dumps(objects), priors=json.dumps(PRIORS))})
-    r = boto3.client("bedrock-runtime", region_name=os.environ.get("AWS_REGION", "us-east-1")).converse(
-        modelId=MODEL, messages=[{"role": "user", "content": content}], inferenceConfig={"maxTokens": 4000},
-        toolConfig={"tools": [{"toolSpec": {"name": "report", "description": "Report the size references.",
-                                            "inputSchema": {"json": SCHEMA}}}]})
-    return next(c["toolUse"]["input"] for c in r["output"]["message"]["content"] if "toolUse" in c)
+        content += [{"type": "text", "text": f"Image {i}"}, nebius.image(img, 768)]
+    content.append({"type": "text", "text": PROMPT.format(objects=json.dumps(objects), priors=json.dumps(PRIORS)).replace(
+        "Call the report tool with:", f"Answer with one JSON object that follows this schema: {json.dumps(SCHEMA)}")})
+    text, info = nebius.chat(MODEL, [{"role": "user", "content": content}], max_tokens=4000, json_mode=True, tag="v0", timeout=120)
+    if "error" in info:
+        raise RuntimeError(info["error"])
+    return nebius.parse_json(text)
 
 
 def agent_images(scan, objects, n=6):
@@ -147,7 +147,7 @@ def run(folder, room):
             cv.imwrite(str(out / f"{room}-img{i}.jpg"), img)
         s.top_view(out / f"{room}-top.png", objs)
         t1 = time.time()
-        ai = ask_claude(images, [{"id": o["id"], "cls": o["cls"], "image": ks.index(o["k"])} for o in objs if o["k"] in ks])
+        ai = ask_model(images, [{"id": o["id"], "cls": o["cls"], "image": ks.index(o["k"])} for o in objs if o["k"] in ks])
         byid = {o["id"]: o for o in objs}
         refs = [{"id": a["id"], "label": a["reference"], "measured_m": byid[a["id"]]["top_model_m"],
                  "typical_m": a["typical_height_m"], "spread": a["spread_pct"] / 100,

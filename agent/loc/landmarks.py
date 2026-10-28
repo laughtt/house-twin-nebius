@@ -67,6 +67,20 @@ def room(pf, hist, sharp=25.0):
     pf._normalise()
 
 
+def room_name(pf, name, sure):
+    """A model named the room the camera shows (Nemotron VL): the same weak vote as the colours, scaled by sure. Each guess
+    is scored by the room it looks at (60 % of the way to the wall ahead, at most 2 m), not the room it stands in: in an
+    open-plan flat a camera in the hallway mostly shows the living room (24 % of real frames, eval/vl_rooms.py)."""
+    k = next((i for i, r in enumerate(pf.map.rooms) if r["name"] == name), None)
+    if k is None:
+        return
+    x, y, yaw = pf.p.T
+    d = 0.6 * np.minimum(pf.map.raycast(x, y, yaw), 2.0)
+    score = np.r_[np.arange(len(pf.map.rooms)) == k, 0.5]  # last: outside every room
+    pf.w *= 1 - 0.4 * sure + 0.4 * sure * score[pf.map.room(x + d * np.cos(yaw), y + d * np.sin(yaw))]
+    pf._normalise()
+
+
 def marker(pf, marker_id, solutions):
     """One ArUco sighting. IPPE gives two camera poses; keep the one nearest the current guess."""
     m = pf.map.markers[marker_id]

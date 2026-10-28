@@ -45,6 +45,24 @@ flowchart LR
 - `walk.py`: the live loop on Pollen's duck-sim. `mission.py`: the same brain in the offline twin, without a camera.
 - `../eval/vision_walk.py`: the brain in the offline twin, with frames rendered by the twin and the same
   `vision_decision` and approval logic as `walk.py`.
+- `language.py`: NVIDIA Nemotron for words, never for steering. `walk.py --command "check the stove, then the bed"`:
+  Nemotron Ultra picks which rooms, in which order (tool calls; only rooms this home has, else it asks back and the duck
+  doesn't move). With a model key it also phrases the questions to the person and writes `report.md`. A* plans every path.
+- `voice.py` + `walk.py --listen` (`scripts/demo.sh voice`): talk to the duck through the Mac's microphone, any time.
+  A loudness gate cuts out what you say, Nemotron Omni writes it down, Ultra plans it, and the duck says its plan aloud
+  (macOS `say`) and walks. A new command replaces the plan; a short "alto"/"stop" stops it at once, without a model. It
+  asks its questions aloud and waits up to 10 s for a yes/no (silence = yes, logged). Typed lines work the same way.
+  `film.py --live` shows the walk as it happens in a window. Ctrl-C: the report, spoken and in `report.md`.
+- `nebius.py`: the model client (OpenAI-compatible; Nebius Token Factory, or NVIDIA's API catalog while developing).
+
+## Why Nemotron is not in the 5 Hz loop
+We put Nemotron VL in the localization loop and measured it on real iPhone frames (3-room scan, unknown start, 4 seeds):
+it named the room the camera shows right in 78.9 % of frames (the colour vote: 75.2 %), and the filter was within 30 cm
+56.8 % of the time with it, 56.1 % with the 1 ms colour vote. The spread between seeds (26–70 %) is bigger than that
+gap, and a call takes ~1–1.4 s (one took 30 s). So it doesn't steer. It does the words, where it beats our code: on 40
+spoken commands (`eval/commands.py`: English, Spanish, typos, intent, "every room except", places this home doesn't
+have) Ultra picked the right rooms 95 % of the time, the keyword matcher 62.5 %, and neither sent the duck somewhere it
+should have asked about. Numbers: `out/vl_rooms/`, `out/lowview/`, `out/commands/results.json`.
 
 ## Trace events (`trace.jsonl`)
 Each step has one line: `t`, `true`, `est`, `conf`, `mode`, `aim`, `goal`, `room_said`, `room_true`, `seen`
@@ -64,11 +82,19 @@ Each step has one line: `t`, `true`, `est`, `conf`, `mode`, `aim`, `goal`, `room
 - `approval`: the duck asked a person. Two moments: lost for 20 s on one goal ("keep looking?"; declined, the duck
   stops and the goal ends with `why: "declined"`), and at the goal when the camera's colours over the last 5 s name
   another room (`cause: "room colour"`, "say I've arrived?"; declined, it checks again in 10 s). `answer` is true or
-  false; `by` is `auto` (the default: yes, logged), `terminal` (`--ask`) or `script` (in the eval).
+  false; `by` is `auto` (the default: yes, logged), `terminal` (`--ask`), `voice` / `no answer` (`--listen`, with
+  `heard`) or `script` (in the eval).
   ```json
   {"t": 135.95, "event": "approval", "question": "Lost for 20 s (50% sure, best guess: living_room, the camera's colours say: bedroom). Keep looking for the bedroom_2?", "answer": true, "by": "auto", "goal": "bedroom_2"}
   ```
 - `arrive`: the duck says it reached the goal (`true_dist` is how far off it really was).
+- `command` (`--listen`): what was `heard` (`via` mic or typed), the Omni and Ultra latencies (`asr`, `plan`), the
+  `goals` and what the duck said back; `goal_points` are the goals it now walks to (empty: stop).
+- `model_decision`: one Nemotron call: `kind` (`plan`, `question`, `report`, `asr`), `model`, `seconds`, what went in and what
+  came out. A failed call keeps the keyword plan or the template question, and says so in `error`.
+  ```json
+  {"t": 0.0, "event": "model_decision", "kind": "plan", "model": "nvidia/nemotron-3-ultra-550b-a55b", "seconds": 1.69, "in": "check the second bedroom", "out": "{\"goals\": [\"bedroom_2\"], \"ask\": \"\", \"say\": \"Checking the second bedroom.\"}"}
+  ```
 
 ## Does the camera change the outcome? (offline twin of the flat, 16 starts, 3 goals each)
 `uv run --python 3.12 --with mujoco --with opencv-python-headless==5.0.0.93 python eval/vision_walk.py --seeds 16 [--stickers] [--standin] [--decline]`

@@ -42,11 +42,46 @@ ignore = ["person", "dog", "cat", "cup", "bottle", "wine glass", "bowl", "cell p
 # the detector class a tag label answers to (tags with no class still go in house.json, for goals like "go to the sofa")
 tag_cls = { fridge = "refrigerator", oven = "oven", stove = "oven", sink = "sink", sofa = "couch", bed = "bed", tv = "tv", table = "dining table", toilet = "toilet", plant = "potted plant" }
 
+[nebius]
+# Where model calls go (OpenAI-compatible). The submission needs "nebius" (Token Factory). "nvidia" = NVIDIA's API catalog,
+# same Nemotron models, for development only (no Nebius account yet). Every call logs its provider in out/model_calls.jsonl.
+provider = "nvidia"
+image_px = 512                                   # long side of every image sent (fewer image tokens)
+
+[nebius.nebius]
+# IDs from a third-party listing: confirm with `python -m agent.nebius` (GET /v1/models)
+base_url = "https://api.tokenfactory.nebius.com/v1"
+key = "NEBIUS_API_KEY"
+vl = "nvidia/Nemotron-3.5-Super-VL"              # camera frames: which room, landmark check, room measure
+ultra = "nvidia/Nemotron-3-Ultra-550b-a55b"      # a spoken command → goals over house.json
+lightning = "nvidia/Nemotron-3_5-Lightning"      # questions to the person, the patrol report
+omni = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"  # speech → words (agent/voice.py)
+
+[nebius.nvidia]
+base_url = "https://integrate.api.nvidia.com/v1"
+key = "NVIDIA_API_KEY"
+vl = "nvidia/nemotron-3.5-super-vl-120b-a12b"
+ultra = "nvidia/nemotron-3-ultra-550b-a55b"
+lightning = "nvidia/nemotron-3.5-lightning-30b-a3b"
+omni = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+
+[nebius.price]
+# $ per 1M tokens [in, out], Token Factory list prices (NVIDIA-catalog calls are costed as if on Token Factory)
+"nvidia/Nemotron-3.5-Super-VL" = [0.30, 0.90]
+"nvidia/Nemotron-3-Ultra-550b-a55b" = [1.0, 3.0]
+"nvidia/nemotron-3-super-120b-a12b" = [0.30, 0.90]
+"nvidia/Nemotron-3_5-Lightning" = [0.06, 0.24]
+"nvidia/nemotron-3.5-super-vl-120b-a12b" = [0.30, 0.90]
+"nvidia/nemotron-3-ultra-550b-a55b" = [1.0, 3.0]
+"nvidia/nemotron-3.5-lightning-30b-a3b" = [0.06, 0.24]
+"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" = [0.06, 0.24]  # not listed yet: costed as Lightning
+
 [curate]
 # who checks the landmark list (what each candidate really is, keep or drop, how often it moves):
 #   rules  = the lists above only        opencv = ImageNet classifier on each crop (cv.dnn, offline)
-#   clip   = open-vocabulary CLIP (cv.dnn, offline)   gemini = Gemini API (GEMINI_API_KEY)   haiku = Claude Haiku (Bedrock)
-#   hybrid = clip, and Gemini only for the crops clip is unsure about (clip alone when there is no key)
+#   clip   = open-vocabulary CLIP (cv.dnn, offline)   nemotron = Nemotron VL on Token Factory (NEBIUS_API_KEY)
+#   hybrid = clip, and Nemotron only for the crops clip is unsure about (clip alone when there is no key)
+#   opt-in, off the default path: gemini = Gemini API (GEMINI_API_KEY), haiku = Claude Haiku (Bedrock)
 backend = "hybrid"
 model = "global.anthropic.claude-haiku-5-5"   # haiku backend
 region = "us-east-1"

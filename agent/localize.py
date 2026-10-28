@@ -115,6 +115,9 @@ class ParticleFilter:
     def update_room(self, hist, sharp=25.0):
         landmarks.room(self, hist, sharp)
 
+    def update_room_name(self, name, sure):
+        landmarks.room_name(self, name, sure)
+
     def update_marker(self, marker_id, solutions):
         """One ArUco sighting (perceive.see passes those within 3 m). Once sure, its pose is the trusted one, so the jump
         check doesn't drop it. Not before: IPPE's two poses are told apart by the current guess, which is still random

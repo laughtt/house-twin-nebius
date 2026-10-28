@@ -1,6 +1,7 @@
 """Landmark candidates → which ones the duck may trust, and how much. One interface, several checkers (config
 [curate] backend): rules (config lists), opencv (ImageNet classifier in cv.dnn), clip (open-vocabulary CLIP in cv.dnn),
-gemini (Gemini API), haiku (Claude on Bedrock), hybrid (clip, then Gemini only for the crops clip is unsure about).
+nemotron (Nemotron VL on Nebius Token Factory), hybrid (clip, then Nemotron only for the crops clip is unsure about);
+opt-in only: gemini (Gemini API), haiku (Claude on Bedrock).
 Same output for all: {candidate id: {keep, label, merge_into, mobility, reason, conf}}, plus a note on who decided.
 The person's own tags are never dropped or merged away; anything a checker leaves out falls back to the lists."""
 import base64
@@ -97,6 +98,23 @@ def ask_gemini(cands, crops, rooms):
     return json.loads("".join(p.get("text", "") for p in r["candidates"][0]["content"]["parts"] if not p.get("thought")))
 
 
+def ask_nemotron(cands, crops, rooms):
+    from agent import nebius
+    content = [{"type": "text", "text": PROMPT.replace("Call the report tool once with", "Answer with one JSON object "
+                "{\"landmarks\": [...], \"warnings\": [...]} with").format(cands=json.dumps(_rows(cands)), rooms=json.dumps(rooms))}]
+    for c in cands[:CUR["max_images"]]:  # same order as the list: a model pairs each picture with its caption more reliably
+        content += [{"type": "text", "text": f"Candidate {c['id']}"}, nebius.image(crops[c["id"]], 256)]
+    text, info = nebius.chat(nebius.P["vl"], [{"role": "user", "content": content}], max_tokens=8000, json_mode=True, tag="curate", timeout=120)
+    if "error" in info:
+        raise RuntimeError(info["error"])
+    return nebius.parse_json(text)
+
+
+def _vl():
+    from agent import nebius
+    return nebius.P["vl"]
+
+
 def _apply(dec, ans, cands):
     """Model answers over the list decisions, field by field; malformed entries are ignored."""
     items = ans.get("landmarks") or []
@@ -155,12 +173,13 @@ def curate(cands, crops, rooms, use_model=True, backend=None):
         if backend in ("opencv", "clip", "hybrid"):
             dec = local(cands, crops, "clip" if backend == "hybrid" else backend)
             unsure = [c for c in cands if c["source"] != "user" and (dec[c["id"]]["conf"] or 0) < CUR["sure"]]
-            if backend == "hybrid" and unsure and os.environ.get("GEMINI_API_KEY"):
-                got, note["warnings"] = _apply(dec, ask_gemini(unsure, crops, rooms), unsure)
-                note.update(asked=f"{len(unsure)}/{len(cands)}", answered=len(got), model=CUR["gemini_model"])
+            if backend == "hybrid" and unsure and os.environ.get("NEBIUS_API_KEY"):
+                got, note["warnings"] = _apply(dec, ask_nemotron(unsure, crops, rooms), unsure)
+                note.update(asked=f"{len(unsure)}/{len(cands)}", answered=len(got), model=_vl())
         else:
-            got, note["warnings"] = _apply(dec, (ask_gemini if backend == "gemini" else ask_haiku)(cands, crops, rooms), cands)
-            note.update(answered=f"{len(got)}/{len(cands)}", model=CUR["gemini_model"] if backend == "gemini" else CUR["model"])
+            ask, model = {"nemotron": (ask_nemotron, _vl()), "gemini": (ask_gemini, CUR["gemini_model"])}.get(backend, (ask_haiku, CUR["model"]))
+            got, note["warnings"] = _apply(dec, ask(cands, crops, rooms), cands)
+            note.update(answered=f"{len(got)}/{len(cands)}", model=model)
     except Exception as e:  # no key, no network, model missing, malformed answer: what was decided so far stands
         note["error"] = f"{type(e).__name__}: {e}"[:300]
     note["seconds"] = round(time.time() - t0, 1)

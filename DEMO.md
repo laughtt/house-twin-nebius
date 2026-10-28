@@ -17,7 +17,8 @@ the camera's colours say, and the moments OpenCV changed the plan or the duck as
 
 ![Architecture](docs/architecture.svg)
 
-Contest category: **Agentic Vision**. The checklist with evidence is in [section 6](#6-agentic-vision-evidence).
+Spoken commands go through NVIDIA Nemotron (`scripts/demo.sh voice`; models and numbers: README). The perception →
+decision → action evidence is in [section 6](#6-agent-loop-evidence).
 
 ## Quick start
 Judges: [TESTING.md](TESTING.md) tests everything without the iPhone app (a built sample home is in `samples/`).
@@ -144,7 +145,7 @@ with a banner whenever the camera changed the plan or the duck asked a person.
 | whole walk | 351 s | 427 s (stops to look when it can't verify itself) |
 | camera: decisions changed / questions asked | – | 4 / 2 |
 
-## 6. Agentic Vision evidence
+## 6. Agent loop evidence
 | the rule asks for | where |
 |---|---|
 | an agent in a multi-step perception → decision → action loop | `agent/walk.py` (live), `eval/vision_walk.py` (offline); diagram in `agent/README.md` |

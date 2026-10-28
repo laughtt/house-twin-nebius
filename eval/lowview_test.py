@@ -1,6 +1,6 @@
 """Zero-sticker localization on real images: the scan's own duck-height frames play the duck's camera.
 
-uv run --python 3.12 --with opencv-python-headless==5.0.0.93 --with matplotlib python eval/lowview_test.py <scan.zip> [--all-frames]
+uv run --python 3.12 --with opencv-python-headless==5.0.0.93 --with matplotlib python eval/lowview_test.py <scan.zip> [--all-frames] [--seed N]
 
 - map: out/houses/<session>/house.json + report.json (`python -m twin build` of the same scan). Optimistic: same day,
   same light, and the landmarks were found in these very frames.
@@ -8,6 +8,7 @@ uv run --python 3.12 --with opencv-python-headless==5.0.0.93 --with matplotlib p
   YOLOX on the upright picture → class + bearing (the pixel's ray turned into the house frame); range from LiDAR depth.
 - duck ToF: the LiDAR depth within ±5° of level, in 8 columns over 45° around the heading (no data → skipped).
 - odometry: ARKit pose deltas with the drift of eval/localize_test.py (4 % long, 2 % sideways, ~3°/m heading).
+- room by Nemotron: the answers eval/vl_rooms.py saved for these frames (out/vl_rooms/<session>/frames.jsonl), if any.
 - truth: the ARKit pose. Every filter starts with no idea where it is, except the "known start" one.
 """
 import json
@@ -30,10 +31,11 @@ from twin.scan_io import Export, kmat  # noqa: E402
 ex = Export(sys.argv[1])
 ALL = "--all-frames" in sys.argv
 ODO = sys.argv[sys.argv.index("--odometry") + 1] if "--odometry" in sys.argv else "duck"  # duck | gyro | perfect
+SEED = int(sys.argv[sys.argv.index("--seed") + 1]) if "--seed" in sys.argv else 1
 HOUSE = ROOT / "out/houses" / ex.session
 house = json.loads((HOUSE / "house.json").read_text())
 sf = json.loads((HOUSE / "report.json").read_text())["scan_frame"]
-OUT = ROOT / "out/lowview" / (ex.session + ("-all" if ALL else "") + ("" if ODO == "duck" else "-" + ODO))
+OUT = ROOT / "out/lowview" / (ex.session + ("-all" if ALL else "") + ("" if ODO == "duck" else "-" + ODO) + ("" if SEED == 1 else f"-seed{SEED}"))
 OUT.mkdir(parents=True, exist_ok=True)
 c, s = math.cos(sf["theta"]), math.sin(sf["theta"])
 R2, z0, o = np.array([[c, s], [-s, c]]), sf["z0"], np.array(sf["origin"])
@@ -110,10 +112,14 @@ eye = float(np.median([p[2] for (p, _), lw in zip(truth, low) if lw]))
 occ = HOUSE / house["occupancy"]["file"] if "occupancy" in house else None
 hmap = HouseMap(house, eye_h=eye, occupancy=occ)  # a level ray at this height passes over anything lower
 p0, y0_ = truth[first]
-filters = {"ToF": ParticleFilter.anywhere(hmap, seed=1), "ToF + objects": ParticleFilter.anywhere(hmap, seed=1),
-           "ToF + objects + room colour": ParticleFilter.anywhere(hmap, seed=1),
-           "ToF + objects, known start": ParticleFilter(hmap, p0[0], p0[1], y0_, seed=1)}
-rng = np.random.default_rng(7)
+filters = {"ToF": ParticleFilter.anywhere(hmap, seed=SEED), "ToF + objects": ParticleFilter.anywhere(hmap, seed=SEED),
+           "ToF + objects + room colour": ParticleFilter.anywhere(hmap, seed=SEED),
+           "ToF + objects, known start": ParticleFilter(hmap, p0[0], p0[1], y0_, seed=SEED)}
+VL = ROOT / "out/vl_rooms" / ex.session / "frames.jsonl"
+vl = {r["i"]: r for r in map(json.loads, VL.read_text().splitlines()) if r.get("vl")} if VL.exists() else {}
+if vl:
+    filters["ToF + objects + Nemotron room"] = ParticleFilter.anywhere(hmap, seed=SEED)
+rng = np.random.default_rng(7 if SEED == 1 else SEED + 100)
 log = {k: [] for k in filters}
 rooms = {k: [] for k in filters}
 times, seen = [], 0
@@ -148,13 +154,15 @@ for k in range(first, len(frames)):
             flt.update_landmarks(objs, hfov(f, P))
         if "colour" in name:
             flt.update_room(hist)
+        if "Nemotron" in name and f["i"] in vl:
+            flt.update_room_name(vl[f["i"]]["vl"], 0.6)  # Nemotron says ≥ 0.9 sure, right or wrong: a fixed weight
         e = flt.estimate()
         log[name].append(math.hypot(e[0] - pb[0], e[1] - pb[1]))
         rooms[name].append(hmap.room(e[0], e[1]) == hmap.room(pb[0], pb[1]))
     times.append(f["t"])
 
 t = np.array(times) - times[0]
-res = {"session": ex.session, "query_frames": len(t), "eye_height_m": round(eye, 2), "detections": seen,
+res = {"session": ex.session, "query_frames": len(t), "nemotron_room_frames": sum(f["i"] in vl for f in frames), "eye_height_m": round(eye, 2), "detections": seen,
        "landmarks_in_map": len(hmap.landmarks), "note": "map built from the same scan: optimistic"}
 for name, e in log.items():
     e = np.array(e)
