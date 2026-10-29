@@ -12,7 +12,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent))
 from passwd import make  # noqa: E402
 
-os.environ.update(API_KEY="test-key", TOKEN_SECRET="test-secret", APP_USER="demo", APP_PASSWORD_HASH=make("test-password"))
+os.environ.update(API_KEY="test-key", TOKEN_SECRET="test-secret", APP_USERS=f"demo={make('test-password')},judge={make('judge-password')}")
 os.environ.setdefault("UPLOAD_DIR", "/nonexistent")
 import app as service  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -43,13 +43,18 @@ def test_login_ok_and_token_opens_protected_endpoints():
 def test_wrong_password_or_user():
     assert login("nope").status_code == 401
     assert login(user="admin").status_code == 401
+    assert login("test-password", user="judge").status_code == 401  # one user's password doesn't open another
 
 
-def test_login_disabled_without_hash(monkeypatch):
-    token = login().json()["token"]
-    monkeypatch.setattr(service, "APP_PASSWORD_HASH", "")
-    assert login().status_code == 401
-    assert client.get("/lidar/sessions", headers={"Authorization": f"Bearer {token}"}).status_code == 401
+def test_second_user_and_revoking_one(monkeypatch):
+    judge = login("judge-password", user="judge").json()["token"]
+    demo = login().json()["token"]
+    assert client.get("/lidar/sessions", headers={"X-API-Key": judge}).status_code == 200
+    monkeypatch.setitem(service.USERS, "judge", make("new-judge-password"))  # a new password signs that user out
+    assert client.get("/lidar/sessions", headers={"X-API-Key": judge}).status_code == 401
+    assert client.get("/lidar/sessions", headers={"X-API-Key": demo}).status_code == 200
+    monkeypatch.delitem(service.USERS, "judge")
+    assert login("new-judge-password", user="judge").status_code == 401
 
 
 def test_rate_limit_after_five_failures():
@@ -62,11 +67,12 @@ def test_rate_limit_after_five_failures():
 
 def test_expired_tampered_and_foreign_tokens_rejected(monkeypatch):
     token = login().json()["token"]
-    kind, exp, sig = token.split(".")
+    kind, user, exp, sig = token.split(".")
     past, flip = int(time.time()) - 1, sig[:-1] + ("1" if sig.endswith("0") else "0")
-    for bad in (f"{kind}.{past}.{service.sign(past)}", f"{kind}.{int(exp) + 1}.{sig}", f"{kind}.{exp}.{flip}", "garbage"):
+    for bad in (f"{kind}.{user}.{past}.{service.sign(user, past)}", f"{kind}.{user}.{int(exp) + 1}.{sig}", f"{kind}.{user}.{exp}.{flip}",
+                f"{kind}.judge.{exp}.{sig}", "garbage"):
         assert client.get("/lidar/sessions", headers={"Authorization": f"Bearer {bad}"}).status_code == 401
-    assert not service.token_ok("t1.²³.x")
+    assert not service.token_ok("t2.demo.²³.x")
     monkeypatch.setattr(service, "TOKEN_SECRET", "another-secret")
     assert client.get("/lidar/sessions", headers={"Authorization": f"Bearer {token}"}).status_code == 401
 
@@ -77,6 +83,7 @@ def test_maps_list_with_states(tmp_path):
         (tmp_path / s / "lidar.zip").write_bytes(b"zip")
     spaces = {"Kitchen": {"area_m2": 9.5}, "Hall": {"area_m2": 4.25}}
     (tmp_path / "lidar-3" / "house" / "report.json").write_text(json.dumps({"spaces": spaces}))
+    (tmp_path / "lidar-3" / "house" / "house.json").write_text(json.dumps({"rooms": [{"name": "kitchen"}, {"name": "hall"}]}))
     (tmp_path / "lidar-2" / "build.log").write_text("Traceback: boom")
     r = client.get("/lidar/maps", headers={"Authorization": f"Bearer {login().json()['token']}"})
     assert r.json() == [{"session": "lidar-3", "state": "done", "rooms": 2, "area_m2": 13.8},

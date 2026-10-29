@@ -1,0 +1,712 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>House Twin · One walk, any robot</title>
+<meta name="description" content="Walk through your home once with an iPhone. A home robot then knows every room, takes spoken orders in any language through NVIDIA Nemotron, and asks you when it isn't sure. Nebius × NVIDIA Global AI Hackathon, Physical AI track.">
+<meta name="theme-color" content="#0A0E0B">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%2376B900%27/%3E%3Cpath d=%27M8 16l8-7 8 7v8H8z%27 fill=%27%230B1400%27/%3E%3C/svg%3E">
+<meta property="og:title" content="House Twin · One walk, any robot">
+<meta property="og:description" content="One iPhone LiDAR walk becomes a digital twin any robot can patrol. NVIDIA Nemotron turns spoken orders into rooms.">
+<meta property="og:image" content="/assets/passway.webp">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..800&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
+<style>
+:root {
+  --bg: #0A0E0B; --bg2: #0F1510; --bg3: #151D16;
+  --line: rgba(226, 237, 222, .09); --line2: rgba(226, 237, 222, .18);
+  --text: #E8EDE6; --soft: #A3AEA0; --dim: #6C786A;
+  --nv: #76B900; --nv-ink: #0B1400; --neb: #E2F86A; --cool: #5CC8FF; --warn: #FF6B4A;
+  --r: 16px; --ease: cubic-bezier(.16, 1, .3, 1);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 400 17px/1.6 "Geist", system-ui, sans-serif; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
+img, video, canvas { display: block; max-width: 100%; }
+a { color: inherit; }
+.mono { font-family: "Geist Mono", ui-monospace, monospace; }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 0 32px; }
+h1, h2, h3 { font-weight: 600; letter-spacing: -.03em; margin: 0; }
+h2 { font-size: clamp(34px, 4.6vw, 60px); line-height: 1.04; max-width: 16ch; margin-top: 18px; }
+h3 { font-size: 22px; letter-spacing: -.02em; }
+.lede { color: var(--soft); font-size: 19px; max-width: 56ch; margin: 22px 0 0; }
+.eyebrow { font: 500 12.5px/1 "Geist Mono", monospace; text-transform: uppercase; letter-spacing: .16em; color: var(--nv); }
+.eyebrow.neb { color: var(--neb); }
+section { position: relative; padding: 130px 0; }
+.src { color: var(--dim); font-size: 13px; line-height: 1.5; margin-top: 18px; }
+.src code { font-family: "Geist Mono", monospace; font-size: 12px; color: var(--soft); }
+em.g { font-style: normal; color: var(--nv); }
+em.n { font-style: normal; color: var(--neb); }
+
+.btn { display: inline-flex; align-items: center; gap: 10px; height: 52px; padding: 0 26px; border-radius: 999px; font-weight: 600; font-size: 16px; text-decoration: none; white-space: nowrap; transition: transform .35s var(--ease), background .3s, border-color .3s; }
+.btn:active { transform: translateY(1px) scale(.98); }
+.btn.primary { background: var(--nv); color: var(--nv-ink); }
+.btn.primary:hover { background: #8BD30F; }
+.btn.primary i { transition: transform .35s var(--ease); }
+.btn.primary:hover i { transform: translateX(3px); }
+.btn.ghost { border: 1px solid var(--line2); background: rgba(10, 14, 11, .4); backdrop-filter: blur(8px); }
+.btn.ghost:hover { border-color: rgba(226, 237, 222, .4); }
+
+/* Nav */
+nav { position: fixed; inset: 0 0 auto; z-index: 30; border-bottom: 1px solid transparent; transition: background .4s, border-color .4s; }
+nav.solid { background: rgba(10, 14, 11, .84); backdrop-filter: blur(14px); border-color: var(--line); }
+nav .wrap { height: 68px; display: flex; align-items: center; gap: 32px; }
+.logo { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 19px; letter-spacing: -.02em; text-decoration: none; }
+.mark { width: 28px; height: 28px; border-radius: 8px; background: var(--nv); display: grid; place-items: center; color: var(--nv-ink); font-size: 17px; }
+nav .links { display: flex; gap: 26px; margin-left: auto; font-size: 15px; }
+nav .links a { text-decoration: none; color: var(--soft); transition: color .2s; }
+nav .links a:hover { color: var(--text); }
+.pill { font: 500 12px/1 "Geist Mono", monospace; letter-spacing: .08em; text-transform: uppercase; padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line2); color: var(--soft); white-space: nowrap; }
+
+/* Hero */
+.hero { min-height: 100dvh; padding: 0; display: grid; align-items: center; overflow: hidden; isolation: isolate; }
+.hero video.bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; opacity: .55; transform: scale(1.08); animation: settle 3s var(--ease) forwards; }
+.hero::before { content: ""; position: absolute; inset: 0; z-index: -1; background:
+  radial-gradient(60% 50% at 75% 45%, rgba(118, 185, 0, .10), transparent 70%),
+  linear-gradient(90deg, rgba(10, 14, 11, .97) 0%, rgba(10, 14, 11, .85) 42%, rgba(10, 14, 11, .55) 70%, rgba(10, 14, 11, .75) 100%),
+  linear-gradient(0deg, var(--bg) 0%, rgba(10, 14, 11, 0) 35%); }
+@keyframes settle { to { transform: scale(1); } }
+.hero .wrap { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 56px; align-items: center; padding-top: 104px; padding-bottom: 72px; width: 100%; }
+.hero h1 { font-size: clamp(46px, 5.8vw, 82px); line-height: 1.01; letter-spacing: -.048em; margin: 22px 0 0; max-width: 13ch; }
+.hero .lede { color: #C2CCBF; font-size: 20px; max-width: 42ch; }
+.hero .cta { display: flex; gap: 14px; margin-top: 36px; flex-wrap: wrap; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 34px; }
+.chip { font: 500 12.5px/1 "Geist Mono", monospace; padding: 8px 11px; border-radius: 8px; background: rgba(226, 237, 222, .06); border: 1px solid var(--line); color: var(--soft); display: inline-flex; gap: 7px; align-items: center; }
+.chip b { width: 7px; height: 7px; border-radius: 50%; background: var(--nv); }
+.chip.neb b { background: var(--neb); }
+.in { opacity: 0; transform: translateY(18px); animation: rise 1s var(--ease) forwards; animation-delay: var(--d, 0s); }
+@keyframes rise { to { opacity: 1; transform: none; } }
+
+/* Console card */
+.console { background: rgba(15, 21, 16, .82); border: 1px solid var(--line2); border-radius: 20px; padding: 22px; backdrop-filter: blur(16px); box-shadow: 0 40px 120px rgba(0, 0, 0, .55); font-size: 15px; }
+.console .top { display: flex; align-items: center; gap: 10px; font: 500 12px/1 "Geist Mono", monospace; color: var(--dim); text-transform: uppercase; letter-spacing: .1em; }
+.console .top .live { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); animation: blink 1.4s infinite; }
+@keyframes blink { 50% { opacity: .25; } }
+.row { display: flex; gap: 12px; align-items: flex-start; margin-top: 16px; opacity: .14; transform: translateY(6px); transition: opacity .6s var(--ease), transform .6s var(--ease); }
+.row.on { opacity: 1; transform: none; }
+.row .ic { flex: 0 0 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--bg3); border: 1px solid var(--line); color: var(--nv); font-size: 18px; }
+.row .who { font: 500 11.5px/1.2 "Geist Mono", monospace; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
+.row .what { margin-top: 4px; }
+.say { font-size: 18px; font-weight: 500; }
+.say .caret { display: inline-block; width: 2px; height: 1em; background: var(--nv); vertical-align: -2px; margin-left: 2px; animation: blink 1s steps(1) infinite; }
+.wave { display: flex; gap: 3px; height: 20px; align-items: center; margin-top: 6px; }
+.wave i { width: 3px; border-radius: 2px; background: var(--nv); height: 30%; animation: wv 1s ease-in-out infinite; animation-delay: calc(var(--k) * -.11s); }
+@keyframes wv { 50% { height: 100%; } }
+.goal { display: inline-block; padding: 4px 10px; border-radius: 999px; background: rgba(118, 185, 0, .14); color: #B6E86A; font: 500 13px/1.3 "Geist Mono", monospace; margin-right: 6px; }
+.bar { height: 6px; border-radius: 3px; background: var(--bg3); overflow: hidden; margin-top: 8px; }
+.bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--cool), var(--nv)); transition: width 3s linear; }
+.row.on .bar i { width: 100%; }
+.row.stop .ic { color: var(--warn); }
+.bubble { background: rgba(255, 107, 74, .12); border: 1px solid rgba(255, 107, 74, .35); border-radius: 12px 12px 12px 4px; padding: 10px 12px; color: #FFD3C8; }
+.console .foot { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); font: 400 12px/1.4 "Geist Mono", monospace; color: var(--dim); }
+
+/* Generic grids and cards */
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 56px; align-items: center; }
+.card { background: var(--bg2); border: 1px solid var(--line); border-radius: var(--r); padding: 26px; }
+.media { border-radius: var(--r); overflow: hidden; border: 1px solid var(--line); background: #000; }
+.media video, .media img { width: 100%; height: auto; }
+.reveal { opacity: 0; transform: translateY(26px); transition: opacity 1s var(--ease), transform 1s var(--ease); transition-delay: var(--d, 0s); }
+.reveal.seen { opacity: 1; transform: none; }
+
+/* Problem */
+.lost { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 56px; }
+.lost .card { position: relative; }
+.lost .card i { font-size: 28px; color: var(--dim); }
+.lost .card p { margin: 12px 0 0; color: var(--soft); font-size: 15.5px; }
+.lost .card.x h3 { text-decoration: line-through; text-decoration-color: var(--warn); text-decoration-thickness: 2px; color: var(--soft); }
+.lost .card.yes { border-color: rgba(118, 185, 0, .5); background: linear-gradient(180deg, rgba(118, 185, 0, .10), var(--bg2)); }
+.lost .card.yes i { color: var(--nv); }
+
+/* Steps */
+.steps { margin-top: 70px; display: grid; gap: 90px; }
+.step { display: grid; grid-template-columns: .9fr 1.1fr; gap: 56px; align-items: center; }
+.step:nth-child(even) { grid-template-columns: 1.1fr .9fr; }
+.step:nth-child(even) .txt { order: 2; }
+.num { font: 500 13px/1 "Geist Mono", monospace; color: var(--nv); display: flex; align-items: center; gap: 12px; }
+.num::after { content: ""; height: 1px; width: 60px; background: linear-gradient(90deg, var(--nv), transparent); }
+.step h3 { font-size: clamp(26px, 2.6vw, 36px); margin-top: 16px; letter-spacing: -.03em; }
+.step p { color: var(--soft); margin: 14px 0 0; max-width: 48ch; }
+.radar { position: relative; aspect-ratio: 16 / 9; }
+.radar img { width: 100%; height: 100%; object-fit: cover; opacity: .9; }
+.radar .sweep { position: absolute; left: 47%; top: 52%; width: 70%; aspect-ratio: 1; translate: -50% -50%; border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(118, 185, 0, .55), rgba(118, 185, 0, 0) 22%); animation: spin 3.2s linear infinite; mix-blend-mode: screen; }
+.radar .dot { position: absolute; left: 47%; top: 52%; width: 14px; height: 14px; translate: -50% -50%; border-radius: 50%; background: var(--nv); box-shadow: 0 0 0 6px rgba(118, 185, 0, .25); }
+@keyframes spin { to { transform: rotate(360deg); } }
+.langs { overflow: hidden; border-radius: var(--r); border: 1px solid var(--line); background: var(--bg2); padding: 26px 0; mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent); }
+.langs .track { display: flex; gap: 14px; width: max-content; animation: slide 36s linear infinite; }
+.langs .q { padding: 12px 18px; border-radius: 12px; background: var(--bg3); border: 1px solid var(--line); white-space: nowrap; font-size: 16px; }
+.langs .q small { display: block; font: 500 11px/1.4 "Geist Mono", monospace; color: var(--nv); text-transform: uppercase; letter-spacing: .1em; }
+.langs .track.b { animation-direction: reverse; margin-top: 14px; }
+@keyframes slide { to { transform: translateX(-50%); } }
+
+/* Twin canvas */
+.twin { display: grid; grid-template-columns: 1.55fr .85fr; gap: 28px; margin-top: 56px; align-items: stretch; }
+.twin .stage { background: radial-gradient(80% 80% at 50% 50%, #121A13, #0B100C); border: 1px solid var(--line); border-radius: 20px; position: relative; overflow: hidden; }
+.twin canvas { width: 100%; height: auto; }
+.twin .hud { position: absolute; left: 18px; top: 16px; right: 18px; display: flex; justify-content: space-between; gap: 12px; font: 500 12px/1.4 "Geist Mono", monospace; color: var(--soft); pointer-events: none; }
+.twin .hud b { color: var(--text); font-weight: 500; }
+.facts { display: grid; gap: 12px; }
+.fact { display: flex; justify-content: space-between; gap: 16px; padding: 14px 18px; border-radius: 12px; background: var(--bg2); border: 1px solid var(--line); font-size: 15px; }
+.fact span:last-child { font-family: "Geist Mono", monospace; color: var(--nv); }
+.scale { height: 10px; border-radius: 5px; background: linear-gradient(90deg, #2B5DA8, #3E8A8A, #76B900, #E0C341, #FF6B4A); margin-top: 6px; }
+.scale + div { display: flex; justify-content: space-between; font: 500 11.5px/1.6 "Geist Mono", monospace; color: var(--dim); }
+
+/* Isaac */
+.robots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 28px; }
+.robot h3 { font-size: 18px; }
+.robot .k { display: flex; justify-content: space-between; margin-top: 10px; font-size: 14.5px; color: var(--soft); }
+.robot .k b { font: 500 14px "Geist Mono", monospace; color: var(--text); }
+.robot .meter { height: 6px; border-radius: 3px; background: var(--bg3); margin-top: 14px; overflow: hidden; }
+.robot .meter i { display: block; height: 100%; width: 0; background: var(--nv); transition: width 1.4s var(--ease) .3s; }
+.seen .robot .meter i, .robot.seen .meter i { width: var(--w); }
+.flow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 26px; font: 500 13px/1 "Geist Mono", monospace; }
+.flow span { padding: 10px 12px; border-radius: 10px; background: var(--bg2); border: 1px solid var(--line); }
+.flow i { color: var(--nv); }
+
+/* Models */
+.models { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 56px; }
+.model { display: flex; flex-direction: column; gap: 10px; transition: transform .5s var(--ease), border-color .4s; }
+.model:hover { transform: translateY(-4px); border-color: rgba(118, 185, 0, .45); }
+.model .tag { font: 500 11.5px/1 "Geist Mono", monospace; color: var(--nv); text-transform: uppercase; letter-spacing: .1em; }
+.model h3 { font-size: 20px; }
+.model p { color: var(--soft); font-size: 15px; margin: 0; flex: 1; }
+.model .m { font: 500 22px/1.2 "Geist Mono", monospace; letter-spacing: -.02em; }
+.model .m small { display: block; font-size: 12px; color: var(--dim); letter-spacing: 0; margin-top: 4px; font-weight: 400; }
+.model.off { opacity: .75; }
+.chart { margin-top: 28px; }
+.chart .head { display: flex; gap: 20px; flex-wrap: wrap; justify-content: space-between; align-items: baseline; }
+.legend { display: flex; gap: 18px; font: 500 12.5px "Geist Mono", monospace; color: var(--soft); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.kinds { display: grid; gap: 14px; margin-top: 22px; }
+.kind { display: grid; grid-template-columns: 140px 1fr 64px; gap: 16px; align-items: center; font-size: 14.5px; }
+.kind .bars { display: grid; gap: 4px; }
+.kind .bars i { height: 9px; border-radius: 5px; width: 0; transition: width 1.3s var(--ease); transition-delay: var(--d, 0s); }
+.kind .bars i.kw { background: #4A5548; }
+.kind .bars i.ul { background: var(--nv); }
+.seen .kind .bars i { width: var(--w); }
+.kind .v { font: 500 13px "Geist Mono", monospace; color: var(--soft); text-align: right; }
+
+/* Loop */
+.loop { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
+.ring { position: relative; aspect-ratio: 1; max-width: 460px; margin: 0 auto; width: 100%; }
+.ring svg { width: 100%; height: 100%; overflow: visible; }
+.ring .orbit { fill: none; stroke: var(--line2); stroke-width: 1.5; }
+.ring .pulse { fill: none; stroke: var(--nv); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 60 820; animation: orbit 1.6s linear infinite; }
+@keyframes orbit { to { stroke-dashoffset: -880; } }
+.ring .node rect { fill: var(--bg3); stroke: var(--line2); }
+.ring .node text { fill: var(--text); font: 600 15px "Geist", sans-serif; text-anchor: middle; }
+.ring .core text { text-anchor: middle; }
+.ring .side { fill: none; stroke: var(--neb); stroke-width: 1.5; stroke-dasharray: 4 6; animation: dash 1.2s linear infinite; }
+@keyframes dash { to { stroke-dashoffset: -20; } }
+.rules { display: grid; gap: 14px; margin-top: 30px; }
+.rules div { display: flex; gap: 14px; align-items: flex-start; color: var(--soft); }
+.rules i { color: var(--nv); font-size: 22px; flex: 0 0 auto; margin-top: 2px; }
+.rules b { color: var(--text); font-weight: 600; }
+
+/* Nebius */
+#nebius { background: radial-gradient(70% 60% at 85% 20%, rgba(226, 248, 106, .07), transparent 70%), var(--bg); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.code { background: #070A08; border: 1px solid var(--line2); border-radius: 16px; padding: 22px 24px; font: 400 14px/1.75 "Geist Mono", monospace; overflow-x: auto; white-space: pre; color: #C9D4C6; }
+.code .c { color: var(--dim); }
+.code .s { color: var(--neb); }
+.code .k { color: var(--nv); }
+.prices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
+.prices .card { padding: 18px; }
+.prices b { display: block; font: 500 26px/1.1 "Geist Mono", monospace; color: var(--neb); letter-spacing: -.02em; }
+.prices span { color: var(--soft); font-size: 14px; }
+.honest { margin-top: 28px; display: flex; gap: 14px; padding: 18px 20px; border-radius: 14px; border: 1px solid rgba(226, 248, 106, .3); background: rgba(226, 248, 106, .05); color: #DDE6C4; font-size: 15.5px; }
+.honest i { color: var(--neb); font-size: 22px; flex: 0 0 auto; }
+.todo { margin-top: 18px; display: grid; gap: 10px; }
+.todo div { display: flex; gap: 12px; align-items: center; color: var(--soft); font-size: 15.5px; }
+.todo i { font-size: 20px; }
+.todo .ok { color: var(--nv); }
+.todo .next { color: var(--neb); }
+
+/* Results */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 56px; }
+.stat { padding: 30px 28px; }
+.stat .big { font: 600 clamp(44px, 5vw, 66px)/1 "Geist", sans-serif; letter-spacing: -.05em; }
+.stat .big small { font-size: .45em; color: var(--soft); letter-spacing: -.02em; margin-left: 4px; }
+.stat .was { font: 500 13px "Geist Mono", monospace; color: var(--dim); margin-top: 10px; }
+.stat .was s { color: var(--warn); }
+.stat p { color: var(--soft); margin: 14px 0 0; font-size: 15.5px; }
+
+/* Real vs sim, limits */
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 50px; }
+.split ul { margin: 16px 0 0; padding: 0; list-style: none; display: grid; gap: 12px; }
+.split li { display: flex; gap: 12px; color: var(--soft); font-size: 15.5px; }
+.split li i { font-size: 20px; flex: 0 0 auto; margin-top: 1px; }
+.split .real h3 i, .split .real li i { color: var(--nv); }
+.split .sim h3 i, .split .sim li i { color: var(--cool); }
+.split h3 { display: flex; gap: 10px; align-items: center; }
+.limits { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 50px; }
+.limits .card p { color: var(--soft); margin: 10px 0 0; font-size: 15.5px; }
+.limits .card h3 { font-size: 18px; display: flex; gap: 10px; align-items: center; }
+.limits .card h3 i { color: var(--warn); }
+
+/* Built with */
+.stack { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 40px; }
+.stack span { padding: 12px 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg2); font-size: 15px; display: inline-flex; align-items: center; gap: 9px; }
+.stack span i { color: var(--nv); font-size: 18px; }
+.stack span.neb i { color: var(--neb); }
+
+.final { text-align: center; padding: 150px 0 120px; overflow: hidden; }
+.final h2 { margin: 18px auto 0; max-width: 18ch; font-size: clamp(40px, 5.6vw, 76px); }
+.final .cta { justify-content: center; display: flex; gap: 14px; margin-top: 38px; flex-wrap: wrap; }
+.final::before { content: ""; position: absolute; left: 50%; top: 55%; width: 900px; height: 900px; translate: -50% -50%; border-radius: 50%; background: radial-gradient(circle, rgba(118, 185, 0, .16), transparent 62%); z-index: -1; animation: breathe 6s ease-in-out infinite; }
+@keyframes breathe { 50% { transform: scale(1.12); opacity: .7; } }
+footer { border-top: 1px solid var(--line); padding: 34px 0 44px; color: var(--dim); font-size: 14px; }
+footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+
+@media (max-width: 1000px) {
+  nav .links { display: none; }
+  .hero .wrap, .grid2, .step, .step:nth-child(even), .twin, .loop, .split, .limits { grid-template-columns: minmax(0, 1fr); gap: 36px; }
+  .step:nth-child(even) .txt { order: 0; }
+  .lost, .models { grid-template-columns: 1fr 1fr; }
+  .stats, .robots, .prices { grid-template-columns: 1fr; }
+  section { padding: 96px 0; }
+}
+@media (max-width: 620px) {
+  .wrap { padding: 0 16px; }
+  nav .pill { display: none; }
+  .lost, .models { grid-template-columns: 1fr; }
+  .kind { grid-template-columns: 96px 1fr 52px; gap: 10px; font-size: 13px; }
+  .console { padding: 16px; }
+  .hero .lede { font-size: 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .reveal, .in, .row { opacity: 1; transform: none; }
+}
+</style>
+</head>
+<body>
+
+<nav id="nav">
+  <div class="wrap">
+    <a class="logo" href="#top"><span class="mark"><i class="ph-fill ph-house-line"></i></span>House Twin</a>
+    <div class="links">
+      <a href="#how">How it works</a><a href="#twin">The twin</a><a href="#isaac">Isaac Sim</a><a href="#nemotron">Nemotron</a><a href="#nebius">Nebius</a><a href="#results">Results</a>
+    </div>
+    <span class="pill">Physical AI track</span>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <video class="bg" src="/assets/house_3d.mp4" poster="/assets/house_3d.webp" autoplay muted loop playsinline></video>
+  <div class="wrap">
+    <div>
+      <div class="eyebrow in" style="--d:.1s">Nebius × NVIDIA Global AI Hackathon</div>
+      <h1 class="in" style="--d:.2s">Walk your home once. <em class="g">Any robot</em> knows it.</h1>
+      <p class="lede in" style="--d:.35s">One iPhone LiDAR walk becomes a measured digital twin of your home. A home robot finds itself in it with no stickers, takes spoken orders in any language through NVIDIA Nemotron, and asks you when it isn't sure.</p>
+      <div class="cta in" style="--d:.5s">
+        <a class="btn primary" href="#isaac">See it drive <i class="ph ph-arrow-right"></i></a>
+        <a class="btn ghost" href="#how">How it works</a>
+      </div>
+      <div class="chips in" style="--d:.65s">
+        <span class="chip"><b></b>Nemotron 3 Ultra</span>
+        <span class="chip"><b></b>Nemotron 3 Nano Omni</span>
+        <span class="chip"><b></b>Isaac Sim 6.2</span>
+        <span class="chip neb"><b></b>Built for Nebius Token Factory</span>
+      </div>
+    </div>
+
+    <div class="console in" style="--d:.45s" id="console" aria-label="Replay of a real run">
+      <div class="top"><span class="live"></span>Replay · a real run in the scanned flat</div>
+      <div class="row" data-t="0">
+        <div class="ic"><i class="ph ph-microphone"></i></div>
+        <div><div class="who">You</div><div class="what say"><span id="typed"></span><span class="caret"></span></div>
+          <div class="wave"><i style="--k:1"></i><i style="--k:2"></i><i style="--k:3"></i><i style="--k:4"></i><i style="--k:5"></i><i style="--k:6"></i><i style="--k:7"></i><i style="--k:8"></i><i style="--k:9"></i><i style="--k:10"></i><i style="--k:11"></i><i style="--k:12"></i></div></div>
+      </div>
+      <div class="row" data-t="3400">
+        <div class="ic"><i class="ph ph-brain"></i></div>
+        <div><div class="who">Nemotron 3 Ultra · tool call over this home · 1.4 s</div>
+          <div class="what"><span class="goal">kitchen</span> “Checking the kitchen for the stove.”</div></div>
+      </div>
+      <div class="row" data-t="5000">
+        <div class="ic"><i class="ph ph-path"></i></div>
+        <div style="flex:1"><div class="who">A* route · Nova Carter, 30 cm wide</div>
+          <div class="what">passway → kitchen</div><div class="bar"><i></i></div></div>
+      </div>
+      <div class="row stop" data-t="8400">
+        <div class="ic"><i class="ph ph-stairs"></i></div>
+        <div><div class="who">Floor steps 14 cm · this body climbs 3 cm</div>
+          <div class="what bubble">“I can climb 3 cm, but the floor steps 14 cm from passway into kitchen. Can you check kitchen for me?”</div></div>
+      </div>
+      <div class="foot">From <span>route.json</span>: Ultra's plan, the route and the question it wrote · Isaac Sim, real flat</div>
+    </div>
+  </div>
+</header>
+
+<section id="problem">
+  <div class="wrap">
+    <div class="eyebrow reveal">The problem</div>
+    <h2 class="reveal" style="--d:.05s">A new robot in your home is lost.</h2>
+    <p class="lede reveal" style="--d:.1s">It has never seen your rooms. The usual fixes cost the person time, or the robot maker a test home. Everyone already carries a phone, and many phones have LiDAR.</p>
+    <div class="lost">
+      <div class="card x reveal" style="--d:.1s"><i class="ph ph-sticker"></i><h3>Stickers on the walls</h3><p>Markers in every room, put up by hand.</p></div>
+      <div class="card x reveal" style="--d:.18s"><i class="ph ph-broadcast"></i><h3>Beacons</h3><p>Extra hardware to buy, place and power.</p></div>
+      <div class="card x reveal" style="--d:.26s"><i class="ph ph-timer"></i><h3>A long mapping run</h3><p>The robot crawls the whole home first, often with a person watching.</p></div>
+      <div class="card yes reveal" style="--d:.34s"><i class="ph-fill ph-device-mobile-camera"></i><h3>One phone walk</h3><p>Walk through once, tap each room. The map is ready for any robot.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="how" style="padding-top:40px">
+  <div class="wrap">
+    <div class="eyebrow reveal">How it works</div>
+    <h2 class="reveal" style="--d:.05s">From a phone walk to a robot that asks.</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="txt reveal"><div class="num">01 · Walk</div><h3>Record the home with the iPhone app.</h3><p>The app records colour, LiDAR depth and the ARKit pose at about 4 frames a second. You tap each room as you enter it, then upload. Sign in, record, upload, My maps.</p></div>
+        <div class="media reveal" style="--d:.1s"><img src="/assets/app_screens.webp" alt="The iPhone app: sign in, My maps, floor plan with room sizes, 3D view" loading="lazy"></div>
+      </div>
+      <div class="step">
+        <div class="txt reveal"><div class="num">02 · Twin</div><h3>The server builds a measured twin.</h3><p>OpenCV 5 turns the walk into floor, walls, doors, rooms with their sizes, furniture and landmarks, as one <code class="mono">house.json</code>, plus a 3D view, a MuJoCo scene and now a USD stage for Isaac Sim. A browser editor fixes room names.</p></div>
+        <div class="media reveal" style="--d:.1s"><video src="/assets/map_build.mp4" autoplay muted loop playsinline preload="metadata"></video></div>
+      </div>
+      <div class="step">
+        <div class="txt reveal"><div class="num">03 · Find itself</div><h3>One turn on the spot, no stickers.</h3><p>The robot turns once and stacks its 8×8 depth readings into a 360° scan, then matches it against every free spot and heading in the twin. It only counts as found when the best place clearly beats the runner-up, and keeps checking the walls as it walks.</p></div>
+        <div class="media radar reveal" style="--d:.1s"><img src="/assets/twin_overview.webp" alt="The MuJoCo twin of the flat" loading="lazy"><div class="sweep"></div><div class="dot"></div></div>
+      </div>
+      <div class="step">
+        <div class="txt reveal"><div class="num">04 · Listen</div><h3>Spoken orders, in your words and language.</h3><p>Nemotron 3 Nano Omni writes the words down. Nemotron 3 Ultra picks this home's rooms through tool calls over <code class="mono">house.json</code>, and the robot says its plan aloud. Vague or unsafe? It asks. “Stop” works at once, without a model.</p></div>
+        <div class="langs reveal" style="--d:.1s">
+          <div class="track">
+            <span class="q"><small>Español</small>revisa la cocina, luego el pasillo y después el jardín</span><span class="q"><small>English</small>go check the kitchen, I think I left the stove on</span><span class="q"><small>Français</small>vérifie la cuisine</span><span class="q"><small>Deutsch</small>geh ins Schlafzimmer</span><span class="q"><small>Negation</small>don't go near the pool, just check the garden</span>
+            <span class="q"><small>Español</small>revisa la cocina, luego el pasillo y después el jardín</span><span class="q"><small>English</small>go check the kitchen, I think I left the stove on</span><span class="q"><small>Français</small>vérifie la cuisine</span><span class="q"><small>Deutsch</small>geh ins Schlafzimmer</span><span class="q"><small>Negation</small>don't go near the pool, just check the garden</span>
+          </div>
+          <div class="track b">
+            <span class="q"><small>Português</small>vai na cozinha</span><span class="q"><small>Italiano</small>vai in camera da letto</span><span class="q"><small>Typos</small>chek the livng room n then the hall</span><span class="q"><small>All but</small>all the rooms but not the garden or the pool</span><span class="q"><small>Must ask</small>check on grandma's room</span>
+            <span class="q"><small>Português</small>vai na cozinha</span><span class="q"><small>Italiano</small>vai in camera da letto</span><span class="q"><small>Typos</small>chek the livng room n then the hall</span><span class="q"><small>All but</small>all the rooms but not the garden or the pool</span><span class="q"><small>Must ask</small>check on grandma's room</span>
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="txt reveal"><div class="num">05 · Patrol and ask</div><h3>It walks each room and asks when unsure.</h3><p>Pollen's Microduck software and its trained walking policy drive a simulated body in the twin of the real flat. When it is lost, or doubts an arrival, it asks a person. Every step goes in a trace, and a film replays it.</p></div>
+        <div class="media reveal" style="--d:.1s"><video src="/assets/robot_walk.mp4" autoplay muted loop playsinline preload="metadata"></video></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="twin">
+  <div class="wrap">
+    <div class="eyebrow reveal">The twin</div>
+    <h2 class="reveal" style="--d:.05s">A real flat, measured down to its steps.</h2>
+    <p class="lede reveal" style="--d:.1s">This is the twin of the flat we scanned, drawn live from its <code class="mono">house.json</code>. Each room is coloured by its floor height from the scan, so a robot knows where the floor steps before it gets there.</p>
+    <div class="twin">
+      <div class="stage reveal">
+        <canvas id="map" width="1400" height="784" aria-label="Animated floor plan of the scanned flat with a robot route"></canvas>
+        <div class="hud"><span id="hud-l"><b>Nova Carter</b> · passway → kitchen</span><span id="hud-r">0.0 m</span></div>
+      </div>
+      <div class="facts reveal" style="--d:.1s" id="facts">
+        <div class="fact"><span>Rooms</span><span id="f-rooms">–</span></div>
+        <div class="fact"><span>Walls</span><span id="f-walls">–</span></div>
+        <div class="fact"><span>Doors</span><span id="f-doors">–</span></div>
+        <div class="fact"><span>Furniture boxes</span><span id="f-obj">–</span></div>
+        <div class="fact"><span>Floor heights (pool → living room)</span><span id="f-lv">–</span></div>
+        <div class="card" style="padding:18px">
+          <div class="mono" style="font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em">Floor height</div>
+          <div class="scale"></div><div><span>low</span><span>high</span></div>
+          <p style="margin:12px 0 0;color:var(--soft);font-size:14.5px">The route stops 40 cm before the first step taller than the robot can climb. A few cm of ARKit drift stay; steps under 5 cm are noise.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="isaac">
+  <div class="wrap">
+    <div class="grid2">
+      <div>
+        <div class="eyebrow reveal">NVIDIA Isaac Sim 6.2</div>
+        <h2 class="reveal" style="--d:.05s">One scan, any robot body.</h2>
+        <p class="lede reveal" style="--d:.1s">The same twin exports to USD with physics: floor tiles at their measured heights, walls with door gaps, a collider on every solid, and the scan's colours on top. In NVIDIA's simulator, Nova Carter drove the route Nemotron planned on its own wheels, and stopped 7 cm from the planned stop, before the 14 cm step.</p>
+        <div class="flow reveal" style="--d:.15s"><span>house.json</span><i class="ph ph-arrow-right"></i><span>to_usd.py</span><i class="ph ph-arrow-right"></i><span>house.usd</span><i class="ph ph-arrow-right"></i><span>Isaac Sim · RTX 4090</span></div>
+      </div>
+      <div class="media reveal" style="--d:.1s"><video src="/assets/carter_kitchen.mp4" poster="/assets/passway.webp" autoplay muted loop playsinline preload="metadata"></video></div>
+    </div>
+    <div class="robots">
+      <div class="card robot reveal"><h3>NVIDIA Nova Carter</h3><div class="k"><span>width (radius)</span><b>30 cm</b></div><div class="k"><span>climbs</span><b>3 cm*</b></div><div class="meter"><i style="--w:100%"></i></div></div>
+      <div class="card robot reveal" style="--d:.08s"><h3>Pollen Microduck</h3><div class="k"><span>width (radius)</span><b>12 cm</b></div><div class="k"><span>climbs</span><b>1.5 cm*</b></div><div class="meter"><i style="--w:50%"></i></div></div>
+      <div class="card robot reveal" style="--d:.16s"><h3>NVIDIA Jetbot</h3><div class="k"><span>width (radius)</span><b>10 cm</b></div><div class="k"><span>climbs</span><b>1 cm*</b></div><div class="meter"><i style="--w:33%"></i></div></div>
+    </div>
+    <p class="src reveal">Each body gets its own route (A* with its radius) and its own stop. *Step limits are assumed, not measured. Clip: 12.8 s, rendered headless on an RTX 4090.</p>
+  </div>
+</section>
+
+<section id="nemotron">
+  <div class="wrap">
+    <div class="eyebrow reveal">NVIDIA Nemotron</div>
+    <h2 class="reveal" style="--d:.05s">Each model has one job.</h2>
+    <p class="lede reveal" style="--d:.1s">Every call goes through one OpenAI-compatible client and is logged with its provider, model id, latency and tokens. Numbers measured in development on NVIDIA's API catalog, same Nemotron models.</p>
+    <div class="models">
+      <div class="card model reveal"><span class="tag">Language → plan</span><h3>Nemotron 3 Ultra</h3><p>Spoken command → which rooms, in which order, by tool calls over this home. Also the robot's questions and its patrol report.</p><div class="m">91.4 %<small>commands right · p50 1.9 s</small></div></div>
+      <div class="card model reveal" style="--d:.08s"><span class="tag">Speech → words</span><h3>Nemotron 3 Nano Omni</h3><p>Microphone audio → text, once per spoken command, in the speaker's own language.</p><div class="m">2.0 s<small>p50 · p95 4.9 s</small></div></div>
+      <div class="card model off reveal" style="--d:.16s"><span class="tag">Tested, not used</span><h3>Nemotron 3.5 Lightning</h3><p>The same 162-command test at a fraction of the price.</p><div class="m">82.1 %<small>commands right · p50 1.3 s</small></div></div>
+      <div class="card model off reveal" style="--d:.24s"><span class="tag">Tested, not in the loop</span><h3>Nemotron 3.5 Super VL</h3><p>Camera frame → which room, on 191 real iPhone frames, against the colour vote.</p><div class="m">78.9 %<small>vs 75.2 % colour vote: no real gain</small></div></div>
+    </div>
+
+    <div class="card chart reveal" id="kinds">
+      <div class="head"><h3>162 spoken commands, two homes, six languages</h3>
+        <div class="legend"><span><i style="background:#4A5548"></i>keywords (no model)</span><span><i style="background:var(--nv)"></i>Nemotron 3 Ultra</span></div></div>
+      <div class="kinds" id="kind-rows"></div>
+      <p class="src">Commands with typos, vague, impossible and unsafe requests, on the sample home and the real flat (8 rooms). <code>out/commands/results.json</code></p>
+    </div>
+  </div>
+</section>
+
+<section id="loop" style="padding-top:40px">
+  <div class="wrap loop">
+    <div>
+      <div class="eyebrow reveal">Safety by design</div>
+      <h2 class="reveal" style="--d:.05s">Models plan. They never steer.</h2>
+      <div class="rules">
+        <div class="reveal"><i class="ph ph-arrows-clockwise"></i><span><b>The 5 Hz loop never waits.</b> Sense, locate, decide, move: the robot's loop runs on its own; a model answer arrives when it arrives.</span></div>
+        <div class="reveal" style="--d:.06s"><i class="ph ph-funnel"></i><span><b>One call in flight.</b> Stale frames are dropped; the loop uses the last answer.</span></div>
+        <div class="reveal" style="--d:.12s"><i class="ph ph-map-trifold"></i><span><b>A command becomes goals, not motion.</b> A* plans every path; the particle filter decides where the robot is.</span></div>
+        <div class="reveal" style="--d:.18s"><i class="ph ph-hand-palm"></i><span><b>When unsure, it asks.</b> A failed call falls back to a keyword plan and says so. “Alto” stops it without a model.</span></div>
+      </div>
+    </div>
+    <div class="ring reveal" style="--d:.1s">
+      <svg viewBox="0 0 460 460" aria-label="The 5 Hz loop with model calls on the side">
+        <circle class="orbit" cx="230" cy="230" r="140"/>
+        <circle class="pulse" cx="230" cy="230" r="140" transform="rotate(-90 230 230)"/>
+        <path class="side" d="M 330 330 Q 420 420 440 300"/>
+        <g class="node"><rect x="180" y="72" width="100" height="36" rx="10"/><text x="230" y="96">sense</text></g>
+        <g class="node"><rect x="320" y="212" width="100" height="36" rx="10"/><text x="370" y="236">locate</text></g>
+        <g class="node"><rect x="180" y="352" width="100" height="36" rx="10"/><text x="230" y="376">decide</text></g>
+        <g class="node"><rect x="40" y="212" width="100" height="36" rx="10"/><text x="90" y="236">move</text></g>
+        <g class="core"><text x="230" y="226" style="fill:var(--nv);font:600 34px Geist">5 Hz</text><text x="230" y="254" style="fill:var(--dim);font:500 12px 'Geist Mono'">robot loop</text></g>
+        <g><rect x="372" y="268" width="88" height="30" rx="8" style="fill:rgba(226,248,106,.08);stroke:rgba(226,248,106,.4)"/><text x="416" y="288" style="fill:var(--neb);font:500 11.5px 'Geist Mono';text-anchor:middle">Nemotron</text></g>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<section id="nebius">
+  <div class="wrap grid2" style="align-items:start">
+    <div>
+      <div class="eyebrow neb reveal">Nebius Token Factory</div>
+      <h2 class="reveal" style="--d:.05s">Built to run on <em class="n">Nebius</em>.</h2>
+      <p class="lede reveal" style="--d:.1s">The robot's language runs through one OpenAI-compatible client pointed at Nebius Token Factory, with NVIDIA's open Nemotron models. Switching providers is one setting, and one script re-runs every test quoted on this page.</p>
+      <div class="honest reveal" style="--d:.15s"><i class="ph ph-info"></i><span>Said plainly: a Nebius account could not be opened from Peru during the hackathon, so the numbers on this page were measured on NVIDIA's API catalog, with the same Nemotron models. Costs use Token Factory's list prices.</span></div>
+      <div class="todo reveal" style="--d:.2s">
+        <div><i class="ph-fill ph-check-circle ok"></i>One client, one log for every call (provider, model, latency, tokens)</div>
+        <div><i class="ph-fill ph-check-circle ok"></i><span class="mono" style="font-size:14px">scripts/nebius_rerun.sh</span> re-runs commands, camera and self-location tests</div>
+        <div><i class="ph ph-circle-dashed next"></i>The 22-house self-location sweep as parallel Serverless Jobs</div>
+      </div>
+    </div>
+    <div>
+      <div class="code reveal" style="--d:.1s"><span class="c"># config.toml</span>
+<span class="k">[nebius]</span>
+provider = <span class="s">"nebius"</span>   <span class="c"># Token Factory</span>
+
+<span class="k">[nebius.nebius]</span>
+base_url  = <span class="s">"https://api.tokenfactory.nebius.com/v1"</span>
+ultra     = <span class="s">"nvidia/Nemotron-3-Ultra-550b-a55b"</span>
+omni      = <span class="s">"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"</span>
+vl        = <span class="s">"nvidia/Nemotron-3.5-Super-VL"</span>
+lightning = <span class="s">"nvidia/Nemotron-3_5-Lightning"</span>
+
+<span class="c"># then</span>
+$ MODEL_PROVIDER=nebius scripts/nebius_rerun.sh</div>
+      <div class="prices">
+        <div class="card reveal" style="--d:.15s"><b>$0.97</b><span>per 1000 commands, Ultra</span></div>
+        <div class="card reveal" style="--d:.2s"><b>$0.06</b><span>per 1000 commands, Lightning</span></div>
+        <div class="card reveal" style="--d:.25s"><b>$0.0011</b><span>the kitchen plan above</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="results">
+  <div class="wrap">
+    <div class="eyebrow reveal">Results</div>
+    <h2 class="reveal" style="--d:.05s">Sure, and right.</h2>
+    <p class="lede reveal" style="--d:.1s">One set of numbers. Being sure fast is easy; being sure and right is the job.</p>
+    <div class="stats">
+      <div class="card stat reveal"><div class="big"><span data-count="91.4" data-dec="1">0</span><small>%</small></div><div class="was">keywords: <s>55.6 %</s></div><p>Spoken commands mapped to the right rooms, 162 commands, 6 languages.</p></div>
+      <div class="card stat reveal" style="--d:.08s"><div class="big"><span data-count="94">0</span><small>%</small></div><div class="was">before: <s>51 %</s></div><p>Goals reached in 22 test houses × 4 seeds, rough sensor.</p></div>
+      <div class="card stat reveal" style="--d:.16s"><div class="big"><span data-count="3">0</span><small>/ 96</small></div><div class="was">before: <s>89 / 96</s></div><p>Runs that locked onto a wrong place. False arrivals: 56 → 0.</p></div>
+      <div class="card stat reveal"><div class="big"><span data-count="7.8" data-dec="1">0</span><small>s</small></div><div class="was">before: <s>61 s</s></div><p>Live walk in the real flat's twin: sure and right about where it is.</p></div>
+      <div class="card stat reveal" style="--d:.08s"><div class="big"><span data-count="6">0</span><small>cm</small></div><div class="was">kitchen 28 · passway 13</div><p>From the garden goal, after “revisa la cocina, luego el pasillo y después el jardín”. 0 bumps.</p></div>
+      <div class="card stat reveal" style="--d:.16s"><div class="big"><span data-count="22" >0</span><small>/ 23</small></div><div class="was">keywords: <s>2 / 23</s></div><p>Spanish commands right with Nemotron 3 Ultra.</p></div>
+    </div>
+    <p class="src reveal"><code>out/commands/results.json</code> · <code>eval/selfloc.py</code> · the live walk in <code>out/walk/</code>. Model numbers: dev, NVIDIA API catalog.</p>
+
+    <div class="split">
+      <div class="card real reveal"><h3><i class="ph-fill ph-check-circle"></i>Real</h3><ul>
+        <li><i class="ph ph-dot-outline"></i>The iPhone LiDAR walks of a real flat: colour, depth, ARKit pose, room taps</li>
+        <li><i class="ph ph-dot-outline"></i>The app, the upload, the twin build on the server</li>
+        <li><i class="ph ph-dot-outline"></i>Pollen's robot software and its trained walking policy</li>
+        <li><i class="ph ph-dot-outline"></i>Speech from a real microphone; every Nemotron call, logged with its latency</li>
+      </ul></div>
+      <div class="card sim reveal" style="--d:.08s"><h3><i class="ph-fill ph-cube"></i>Simulated</h3><ul>
+        <li><i class="ph ph-dot-outline"></i>The robot's body, its 8×8 depth sensor and camera, inside the twin (MuJoCo, Isaac Sim)</li>
+        <li><i class="ph ph-dot-outline"></i>The person's answers in filmed walks, unless said otherwise</li>
+        <li><i class="ph ph-dot-outline"></i>Furniture in the twin is boxes</li>
+        <li><i class="ph ph-dot-outline"></i>Robot step limits in Isaac Sim are assumed</li>
+      </ul></div>
+    </div>
+
+    <div class="limits">
+      <div class="card reveal"><h3><i class="ph ph-warning"></i>Vision didn't beat colours</h3><p>Nemotron VL on 191 real frames: 78.9 % vs 75.2 % on the room the camera sees, and its “sure” is ≥ 0.9 right or wrong. So it is not in the robot's loop.</p></div>
+      <div class="card reveal" style="--d:.06s"><h3><i class="ph ph-warning"></i>Unsafe commands: 4 in 40 got through</h3><p>Twice Ultra walked to the pool or the garden on an unsafe request; twice a failed call fell back to keywords. The fallback needs to ask instead.</p></div>
+      <div class="card reveal"><h3><i class="ph ph-warning"></i>The body is simulated</h3><p>From an unknown start on real chest-height frames the robot is within 0.3 m 52 % of the time; from a known start, 85 %.</p></div>
+      <div class="card reveal" style="--d:.06s"><h3><i class="ph ph-warning"></i>Not yet on Token Factory</h3><p>Measured on NVIDIA's API catalog. Omni on the free tier failed 5 of 14 live calls (503).</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="stack" style="padding-top:20px">
+  <div class="wrap">
+    <div class="eyebrow reveal">Built with</div>
+    <div class="stack reveal" style="--d:.05s">
+      <span><i class="ph ph-cpu"></i>NVIDIA Nemotron 3 Ultra</span><span><i class="ph ph-waveform"></i>Nemotron 3 Nano Omni</span><span><i class="ph ph-eye"></i>Nemotron 3.5 Super VL</span><span><i class="ph ph-lightning"></i>Nemotron 3.5 Lightning</span>
+      <span><i class="ph ph-cube-transparent"></i>NVIDIA Isaac Sim 6.2 · OpenUSD</span><span><i class="ph ph-robot"></i>Nova Carter · Jetbot</span><span class="neb"><i class="ph ph-cloud"></i>Nebius Token Factory</span>
+      <span><i class="ph ph-device-mobile"></i>iPhone LiDAR · ARKit · SwiftUI</span><span><i class="ph ph-scan"></i>OpenCV 5</span><span><i class="ph ph-atom"></i>MuJoCo</span><span><i class="ph ph-bird"></i>Pollen Microduck</span><span><i class="ph ph-lightning-a"></i>FastAPI</span>
+    </div>
+  </div>
+</section>
+
+<section class="final">
+  <div class="wrap">
+    <div class="eyebrow reveal">House Twin</div>
+    <h2 class="reveal" style="--d:.05s">Turn every beta tester's home into a test bench.</h2>
+    <p class="lede reveal" style="--d:.1s;margin:22px auto 0">For home-robot makers first. The end use: check-in rounds for someone living alone. “Is the stove off?”, asked in their own words.</p>
+    <div class="cta reveal" style="--d:.15s"><a class="btn primary" href="#top">Back to the start <i class="ph ph-arrow-up"></i></a><a class="btn ghost" href="#isaac">Watch Carter drive</a></div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap"><span>House Twin · Jose Mauricio Carpio (solo) · Apache-2.0</span><span>Nebius × NVIDIA Global AI Hackathon 2026 · Physical AI track</span></div>
+</footer>
+
+<script>
+const nav = document.getElementById("nav");
+addEventListener("scroll", () => nav.classList.toggle("solid", scrollY > 30), { passive: true });
+
+const kinds = [["Spanish", 2, 22, 23], ["Typos", 0, 8, 8], ["All / except", 3, 12, 12], ["Negation", 0, 4, 4], ["Other language", 1, 6, 7], ["A thing, not a room", 14, 16, 20], ["Order", 11, 12, 14], ["Unsafe", 9, 14, 18]];
+document.getElementById("kind-rows").innerHTML = kinds.map(([k, a, b, n], i) =>
+  `<div class="kind"><span>${k}</span><div class="bars"><i class="kw" style="--w:${a / n * 100}%;--d:${i * .07}s"></i><i class="ul" style="--w:${b / n * 100}%;--d:${i * .07 + .1}s"></i></div><span class="v">${b}/${n}</span></div>`).join("");
+
+function count(el) {
+  const end = +el.dataset.count, dec = +(el.dataset.dec || 0), t0 = performance.now();
+  const tick = t => { const p = Math.min(1, (t - t0) / 1400), e = 1 - Math.pow(1 - p, 3);
+    el.textContent = (end * e).toFixed(dec); if (p < 1) requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+}
+const io = new IntersectionObserver(es => es.forEach(e => {
+  if (!e.isIntersecting) return;
+  e.target.classList.add("seen");
+  e.target.querySelectorAll("[data-count]").forEach(count);
+  io.unobserve(e.target);
+}), { threshold: .18 });
+document.querySelectorAll(".reveal").forEach(el => io.observe(el));
+
+// Hero console: replays the real Carter run
+const rows = [...document.querySelectorAll("#console .row")], typed = document.getElementById("typed");
+const said = "go check the kitchen, I think I left the stove on";
+function replay() {
+  rows.forEach(r => r.classList.remove("on"));
+  typed.textContent = "";
+  rows.forEach(r => setTimeout(() => r.classList.add("on"), +r.dataset.t));
+  [...said].forEach((c, i) => setTimeout(() => typed.textContent += c, 300 + i * 55));
+}
+replay(); setInterval(replay, 14000);
+
+// The twin, drawn from house.json, with Carter's route
+const cv = document.getElementById("map"), cx = cv.getContext("2d");
+let T = null, seen = false;
+new IntersectionObserver(es => { seen = es[0].isIntersecting; }).observe(cv);
+fetch("/assets/twin.json").then(r => r.json()).then(t => {
+  T = t;
+  const lv = t.rooms.map(r => r.level).filter(v => v != null);
+  document.getElementById("f-rooms").textContent = t.rooms.length;
+  document.getElementById("f-walls").textContent = t.walls.length;
+  document.getElementById("f-doors").textContent = t.doors.length;
+  document.getElementById("f-obj").textContent = t.objects.length;
+  document.getElementById("f-lv").textContent = `${Math.round(Math.min(...lv) * 100)} → +${Math.round(Math.max(...lv) * 100)} cm`;
+  const xs = t.walls.flatMap(w => [w[0], w[2]]), ys = t.walls.flatMap(w => [w[1], w[3]]);
+  T.box = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  cv.height = Math.round(120 + (cv.width - 120) * (T.box[3] - T.box[1]) / (T.box[2] - T.box[0]));
+  T.lo = Math.min(...lv); T.hi = Math.max(...lv);
+  let d = 0; T.cum = t.route.path.map((p, i, a) => d += i ? Math.hypot(p[0] - a[i - 1][0], p[1] - a[i - 1][1]) : 0);
+  requestAnimationFrame(draw);
+});
+const stops = [[43, 93, 168], [62, 138, 138], [118, 185, 0], [224, 195, 65], [255, 107, 74]];
+function heat(v) {
+  const f = Math.max(0, Math.min(.999, (v - T.lo) / (T.hi - T.lo))) * (stops.length - 1), i = Math.floor(f), k = f - i;
+  return stops[i].map((c, j) => Math.round(c + (stops[i + 1][j] - c) * k));
+}
+function draw(now) {
+  requestAnimationFrame(draw);
+  if (!T || !seen) return;
+  const W = cv.width, H = cv.height, [x0, y0, x1, y1] = T.box, pad = 60;
+  const s = Math.min((W - 2 * pad) / (x1 - x0), (H - 2 * pad) / (y1 - y0));
+  const ox = (W - s * (x1 - x0)) / 2, oy = (H - s * (y1 - y0)) / 2;
+  const P = (x, y) => [ox + (x - x0) * s, H - oy - (y - y0) * s];
+  cx.clearRect(0, 0, W, H);
+  // grid
+  cx.strokeStyle = "rgba(226,237,222,.04)"; cx.lineWidth = 1;
+  for (let x = Math.floor(x0); x <= x1; x++) { const [a] = P(x, 0); cx.beginPath(); cx.moveTo(a, 0); cx.lineTo(a, H); cx.stroke(); }
+  for (let y = Math.floor(y0); y <= y1; y++) { const [, b] = P(0, y); cx.beginPath(); cx.moveTo(0, b); cx.lineTo(W, b); cx.stroke(); }
+  // rooms by floor height
+  for (const r of T.rooms) {
+    const [R, G, B] = heat(r.level ?? 0);
+    cx.beginPath(); r.polygon.forEach((p, i) => cx[i ? "lineTo" : "moveTo"](...P(...p))); cx.closePath();
+    cx.fillStyle = `rgba(${R},${G},${B},.22)`; cx.fill();
+    cx.strokeStyle = `rgba(${R},${G},${B},.55)`; cx.lineWidth = 1.5; cx.stroke();
+  }
+  // furniture
+  cx.fillStyle = "rgba(226,237,222,.10)";
+  for (const [x, y, w, h] of T.objects) { const [a, b] = P(x - w / 2, y + h / 2); cx.fillRect(a, b, w * s, h * s); }
+  // walls
+  cx.strokeStyle = "rgba(232,237,230,.85)"; cx.lineWidth = 4; cx.lineCap = "round";
+  for (const [ax, ay, bx, by] of T.walls) { cx.beginPath(); cx.moveTo(...P(ax, ay)); cx.lineTo(...P(bx, by)); cx.stroke(); }
+  // labels
+  cx.textAlign = "center";
+  for (const r of T.rooms) {
+    const n = r.polygon.length, c = r.polygon.reduce((a, p) => [a[0] + p[0] / n, a[1] + p[1] / n], [0, 0]);
+    const [a, b] = P(...c);
+    cx.font = "600 22px Geist, sans-serif"; cx.fillStyle = "#E8EDE6"; cx.fillText(r.label, a, b);
+    cx.font = "500 17px 'Geist Mono', monospace"; cx.fillStyle = "#A3AEA0";
+    cx.fillText(`${r.level >= 0 ? "+" : ""}${Math.round(r.level * 100)} cm`, a, b + 24);
+  }
+  // route: grows over 6 s, holds 4 s
+  const path = T.route.path, total = T.cum[T.cum.length - 1], cyc = (now / 1000) % 10, f = Math.min(1, cyc / 6), L = total * f;
+  const planned = new Path2D(); path.forEach((p, i) => planned[i ? "lineTo" : "moveTo"](...P(...p)));
+  cx.setLineDash([8, 10]); cx.lineDashOffset = -now / 40; cx.strokeStyle = "rgba(92,200,255,.6)"; cx.lineWidth = 3; cx.stroke(planned); cx.setLineDash([]);
+  let i = 1; while (i < path.length - 1 && T.cum[i] < L) i++;
+  const k = T.cum[i] > T.cum[i - 1] ? (L - T.cum[i - 1]) / (T.cum[i] - T.cum[i - 1]) : 1;
+  const at = [path[i - 1][0] + (path[i][0] - path[i - 1][0]) * Math.min(1, k), path[i - 1][1] + (path[i][1] - path[i - 1][1]) * Math.min(1, k)];
+  cx.beginPath(); path.slice(0, i).forEach((p, j) => cx[j ? "lineTo" : "moveTo"](...P(...p))); cx.lineTo(...P(...at));
+  cx.strokeStyle = "#76B900"; cx.lineWidth = 6; cx.stroke();
+  const [rx, ry] = P(...at), pr = 1 + .5 * Math.sin(now / 200);
+  cx.beginPath(); cx.arc(rx, ry, 0.3 * s * pr, 0, 7); cx.fillStyle = "rgba(118,185,0,.18)"; cx.fill();
+  cx.beginPath(); cx.arc(rx, ry, 10, 0, 7); cx.fillStyle = "#76B900"; cx.fill();
+  document.getElementById("hud-r").textContent = `${L.toFixed(1)} m`;
+  const st = T.route.stop;
+  if (st && f >= 1) {
+    const [sx, sy] = P(...st.at), a = Math.min(1, (cyc - 6) * 2);
+    cx.globalAlpha = a;
+    cx.beginPath(); cx.arc(sx, sy, 22 + 8 * Math.sin(now / 150), 0, 7); cx.strokeStyle = "#FF6B4A"; cx.lineWidth = 3; cx.stroke();
+    const msg = `Step ${Math.round(st.step * 100)} cm > ${Math.round(st.limit * 100)} cm: stops and asks`;
+    cx.font = "600 20px Geist, sans-serif"; const w = cx.measureText(msg).width + 32;
+    const bx = Math.min(W - w - 10, sx - w / 2), by = sy - 74;
+    cx.fillStyle = "rgba(40,16,10,.92)"; cx.strokeStyle = "rgba(255,107,74,.6)"; cx.lineWidth = 1.5;
+    cx.beginPath(); cx.roundRect(bx, by, w, 42, 10); cx.fill(); cx.stroke();
+    cx.fillStyle = "#FFD3C8"; cx.textAlign = "left"; cx.fillText(msg, bx + 16, by + 28);
+    cx.globalAlpha = 1;
+    document.getElementById("hud-l").innerHTML = `<b style="color:#FF6B4A">Asking for help</b> · ${st.rooms[0]} → ${st.rooms[1]}`;
+  } else document.getElementById("hud-l").innerHTML = `<b>Nova Carter</b> · “${T.route.command}”`;
+}
+</script>
+</body>
+</html>

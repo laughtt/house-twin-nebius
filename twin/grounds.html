@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>House Training Grounds</title>
+<style>
+/* Layout: a survey sheet. The plan or 3D view fills the left; rules, rooms and export on the right. */
+:root {
+  --paper: #F2F4F1; --sheet: #FFFFFF; --ink: #18201C; --muted: #5B6760; --line: #D4DBD5; --wall: #1D2521;
+  --accent: #0B6B5A; --step: #C0392B; --water: #2F7FC1; --obj: rgba(30,40,35,.18);
+  --lowc: #3B78B5; --midc: #E8ECE6; --highc: #C8742A;
+  --f-body: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --f-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #0F1412; --sheet: #161D1A; --ink: #E4EAE6; --muted: #9BA8A1; --line: #2C3632; --wall: #E4EAE6;
+  --accent: #46C2A8; --step: #FF7466; --water: #5AA9E6; --obj: rgba(228,234,230,.16);
+  --lowc: #4F8FCF; --midc: #2A3330; --highc: #E0913F; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #0F1412; --sheet: #161D1A; --ink: #E4EAE6; --muted: #9BA8A1; --line: #2C3632; --wall: #E4EAE6;
+  --accent: #46C2A8; --step: #FF7466; --water: #5AA9E6; --obj: rgba(228,234,230,.16);
+  --lowc: #4F8FCF; --midc: #2A3330; --highc: #E0913F; color-scheme: dark }
+* { box-sizing: border-box }
+[hidden] { display: none !important }
+html, body { height: 100% }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 14px/1.45 var(--f-body); display: grid; grid-template-rows: auto 1fr }
+header { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--sheet) }
+h1 { font-size: 1.15rem; margin: 0; letter-spacing: -.01em }
+h2 { font-size: .78rem; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted) }
+.mono { font-family: var(--f-mono); font-size: .8rem; color: var(--muted) }
+.tabs { display: flex; gap: 6px; margin-left: auto }
+button, select { font: 600 .85rem var(--f-body); border: 1.5px solid var(--line); background: var(--sheet); color: var(--ink); padding: 5px 10px; border-radius: 7px; cursor: pointer }
+button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink) }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: 0 }
+.view { position: relative; min-height: 420px }
+canvas { display: block; width: 100%; height: 100% }
+#three { position: absolute; inset: 0 }
+#tip { position: absolute; pointer-events: none; background: var(--sheet); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font: .8rem var(--f-mono); display: none }
+.legend { position: absolute; left: 12px; bottom: 12px; background: var(--sheet); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: grid; gap: 5px; font-size: .8rem }
+.ramp { height: 10px; width: 180px; border-radius: 3px; background: linear-gradient(90deg, var(--lowc), var(--midc), var(--highc)) }
+.ramp-l { display: flex; justify-content: space-between; font: .72rem var(--f-mono); color: var(--muted) }
+.key { display: flex; align-items: center; gap: 6px }
+.sw { width: 18px; height: 4px; border-radius: 2px; display: inline-block }
+.exag { position: absolute; right: 12px; bottom: 12px; background: var(--sheet); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: .8rem; display: flex; gap: 8px; align-items: center }
+aside { border-left: 1px solid var(--line); background: var(--sheet); overflow: auto; padding: 14px; display: grid; gap: 18px; align-content: start }
+.rules { display: grid; gap: 6px; font-size: .86rem }
+.rules p { margin: 0 }
+.rules b { font-variant-numeric: tabular-nums }
+table { border-collapse: collapse; width: 100%; font-size: .83rem; font-variant-numeric: tabular-nums }
+th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: middle }
+th { font: 600 .7rem var(--f-mono); text-transform: uppercase; letter-spacing: .05em; color: var(--muted) }
+td select { padding: 3px 4px; font-size: .8rem; width: 100% }
+.pill { font: 600 .7rem var(--f-mono); padding: 1px 7px; border-radius: 99px; border: 1.5px solid currentColor; white-space: nowrap }
+.p-flat { color: var(--accent) } .p-slope { color: var(--highc) } .p-nogo { color: var(--water) } .p-wall { color: var(--step) }
+textarea { width: 100%; min-height: 140px; font: .75rem var(--f-mono); background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 8px }
+.row { display: flex; gap: 8px; align-items: center }
+.note { font-size: .8rem; color: var(--muted) }
+@media (max-width: 860px) { main { grid-template-columns: 1fr } .view { height: 62vh } aside { border-left: 0; border-top: 1px solid var(--line) } }
+</style>
+</head>
+<body>
+<header>
+  <h1>House Training Grounds</h1>
+  <span class="mono" id="house"></span>
+  <div class="tabs"><button id="t-plan" aria-pressed="true">Plan</button><button id="t-3d" aria-pressed="false">3D</button></div>
+</header>
+<main>
+  <div class="view">
+    <canvas id="plan"></canvas>
+    <div id="three" hidden></div>
+    <div id="tip"></div>
+    <div class="legend">
+      <div>Floor height vs the usual level</div>
+      <div class="ramp"></div>
+      <div class="ramp-l"><span>−15 cm</span><span>0</span><span>+15 cm</span></div>
+      <div class="key"><span class="sw" style="background:var(--step)"></span>step over 1.5 cm: wall</div>
+      <div class="key"><span class="sw" style="background:var(--accent)"></span>door sill 1.5 cm: trained</div>
+      <div class="key"><span class="sw" style="background:var(--water)"></span>pool: no-go</div>
+    </div>
+    <label class="exag" id="exag-box" hidden>height ×<input id="exag" type="range" min="1" max="15" value="6"><span id="exag-v">6</span></label>
+  </div>
+  <aside>
+    <section class="rules">
+      <h2>What the duck can walk</h2>
+      <p>It lifts its feet <b>1–2 cm</b>. Pollen trains steps up to <b>1.5 cm</b>.</p>
+      <p>Bigger steps become <b>walls</b>: on the map, and out of training. The duck asks to be carried.</p>
+      <p>Door sills go into training at <b>1–2 cm</b> (assumed; LiDAR can't measure them).</p>
+      <p class="note">Heights are medians of 50 cm tiles from the iPhone scan; ARKit drift and LiDAR noise are a few cm.</p>
+    </section>
+    <section>
+      <h2>Rooms</h2>
+      <table><thead><tr><th>room</th><th>level</th><th>spread</th><th>surface</th><th>as</th></tr></thead><tbody id="rooms"></tbody></table>
+      <p class="note">Surfaces are your call: the scan can't feel grip. Friction ranges are starting values.</p>
+    </section>
+    <section>
+      <h2>Steps between rooms</h2>
+      <table><thead><tr><th>between</th><th>height</th><th>as</th></tr></thead><tbody id="steps"></tbody></table>
+    </section>
+    <section>
+      <h2>Export for training</h2>
+      <textarea id="out" readonly aria-label="grounds.json"></textarea>
+      <div class="row"><button id="copy">Copy grounds.json</button><span class="note" id="copied"></span></div>
+    </section>
+  </aside>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+const D = /*DATA*/null;
+const SURF = { tile: [0.4, 0.6], wood: [0.5, 0.7], rug: [0.8, 1.1], paving: [0.6, 0.9], grass: [0.5, 0.8], water: null };
+const GUESS = n => /pool/.test(n) ? "water" : /garden/.test(n) ? "paving" : /bed|room_/.test(n) ? "wood" : "tile";
+const KEY = "grounds-surfaces-" + D.house;
+let surf = {};
+try { surf = JSON.parse(localStorage.getItem(KEY) || "{}") } catch (e) {}
+D.rooms.forEach(r => surf[r.name] ||= GUESS(r.name));
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const use = r => surf[r.name] === "water" ? "no-go" : r.spread > 0.05 ? "slope" : "flat";
+const cm = v => (v >= 0 ? "+" : "−") + Math.abs(v * 100).toFixed(0) + " cm";
+document.getElementById("house").textContent = D.house;
+
+function hex(c) { const x = document.createElement("canvas").getContext("2d"); x.fillStyle = c; return x.fillStyle }
+function mix(a, b, t) { const p = s => [1, 3, 5].map(i => parseInt(hex(s).slice(i, i + 2), 16)); const A = p(a), B = p(b); return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(",")})` }
+function hcol(h) { const t = Math.max(-1, Math.min(1, h / 0.15)); return t < 0 ? mix(css("--midc"), css("--lowc"), -t) : mix(css("--midc"), css("--highc"), t) }
+
+// bounds of the house
+const xs = D.walls.flat().map(p => p[0]), ys = D.walls.flat().map(p => p[1]);
+const B = { x0: Math.min(...xs) - .5, x1: Math.max(...xs) + .5, y0: Math.min(...ys) - .5, y1: Math.max(...ys) + .5 };
+const tileAt = (x, y) => { const i = Math.floor((y - D.lo[1]) / D.tile), j = Math.floor((x - D.lo[0]) / D.tile); return (D.ground[i] || [])[j] };
+const roomAt = (x, y) => D.rooms.find(r => inside([x, y], r.polygon));
+function inside([x, y], poly) { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [a, b] = poly[i], [p, q] = poly[j]; if ((b > y) !== (q > y) && x < (p - a) * (y - b) / (q - b) + a) c = !c } return c }
+
+// --- plan
+const cv = document.getElementById("plan"), ctx = cv.getContext("2d");
+let S, OX, OY;
+function drawPlan() {
+  const r = cv.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+  cv.width = r.width * dpr; cv.height = r.height * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  S = Math.min(r.width / (B.x1 - B.x0), r.height / (B.y1 - B.y0)) * .94;
+  OX = (r.width - (B.x1 - B.x0) * S) / 2; OY = (r.height - (B.y1 - B.y0) * S) / 2;
+  const P = (x, y) => [OX + (x - B.x0) * S, OY + (B.y1 - y) * S];
+  ctx.fillStyle = css("--paper"); ctx.fillRect(0, 0, r.width, r.height);
+  D.ground.forEach((row, i) => row.forEach((h, j) => {
+    if (h === null) return;
+    const [px, py] = P(D.lo[0] + j * D.tile, D.lo[1] + (i + 1) * D.tile);
+    ctx.fillStyle = hcol(h); ctx.fillRect(px, py, D.tile * S + .5, D.tile * S + .5);
+  }));
+  D.rooms.filter(r => surf[r.name] === "water").forEach(r => {
+    ctx.save(); ctx.beginPath(); r.polygon.forEach(([x, y], k) => ctx[k ? "lineTo" : "moveTo"](...P(x, y))); ctx.closePath();
+    ctx.fillStyle = css("--water"); ctx.globalAlpha = .35; ctx.fill(); ctx.globalAlpha = 1; ctx.clip();
+    ctx.strokeStyle = css("--water"); ctx.lineWidth = 1.5;
+    for (let k = -2000; k < 2000; k += 10) { ctx.beginPath(); ctx.moveTo(k, 0); ctx.lineTo(k + 1000, 1000); ctx.stroke() }
+    ctx.restore();
+  });
+  ctx.fillStyle = css("--obj");
+  D.objects.forEach(o => { ctx.save(); ctx.translate(...P(...o.c)); ctx.rotate(-o.yaw); ctx.fillRect(-o.s[0] * S / 2, -o.s[1] * S / 2, o.s[0] * S, o.s[1] * S); ctx.restore() });
+  ctx.strokeStyle = css("--wall"); ctx.lineWidth = 2.5; ctx.lineCap = "round";
+  D.walls.forEach(([a, b]) => { ctx.beginPath(); ctx.moveTo(...P(...a)); ctx.lineTo(...P(...b)); ctx.stroke() });
+  ctx.strokeStyle = css("--step"); ctx.lineWidth = 4;
+  D.steps.forEach(s => { ctx.beginPath(); ctx.moveTo(...P(...s.a)); ctx.lineTo(...P(...s.b)); ctx.stroke() });
+  ctx.strokeStyle = css("--accent"); ctx.lineWidth = 5;
+  D.doors.forEach(d => { const [x, y] = d.c, h = d.w / 2, a = d.axis ? [[x, y - h], [x, y + h]] : [[x - h, y], [x + h, y]]; ctx.beginPath(); ctx.moveTo(...P(...a[0])); ctx.lineTo(...P(...a[1])); ctx.stroke() });
+  ctx.textAlign = "center"; ctx.font = `600 ${Math.max(11, S * .32)}px ${css("--f-body")}`;
+  D.rooms.forEach(r => {
+    const cx = r.polygon.reduce((s, p) => s + p[0], 0) / r.polygon.length, cy = r.polygon.reduce((s, p) => s + p[1], 0) / r.polygon.length;
+    const [px, py] = P(cx, cy);
+    ctx.fillStyle = css("--ink"); ctx.fillText(r.label, px, py);
+    ctx.font = `${Math.max(10, S * .26)}px ${css("--f-mono")}`; ctx.fillStyle = css("--muted"); ctx.fillText(cm(r.level), px, py + Math.max(13, S * .34));
+    ctx.font = `600 ${Math.max(11, S * .32)}px ${css("--f-body")}`;
+  });
+  const labelled = new Set();
+  ctx.font = `600 ${Math.max(10, S * .26)}px ${css("--f-mono")}`; ctx.fillStyle = css("--step");
+  D.steps.forEach(s => { const k = s.rooms.join(); if (labelled.has(k) || s.h < .1) return; labelled.add(k); const [px, py] = P((s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2); ctx.fillText(Math.round(s.h * 100) + " cm", px + 14, py - 6) });
+}
+const tip = document.getElementById("tip");
+cv.addEventListener("mousemove", e => {
+  const r = cv.getBoundingClientRect(), x = B.x0 + (e.clientX - r.left - OX) / S, y = B.y1 - (e.clientY - r.top - OY) / S;
+  const h = tileAt(x, y), room = roomAt(x, y);
+  if (h == null) { tip.style.display = "none"; return }
+  tip.textContent = `${room ? room.label + " · " : ""}${cm(h)} · ${x.toFixed(1)}, ${y.toFixed(1)} m`;
+  tip.style.display = "block"; tip.style.left = (e.clientX - r.left + 14) + "px"; tip.style.top = (e.clientY - r.top + 14) + "px";
+});
+cv.addEventListener("mouseleave", () => tip.style.display = "none");
+
+// --- 3D
+let three = null;
+function build3d() {
+  if (!window.THREE) { document.getElementById("three").textContent = "3D needs internet once (three.js from a CDN)."; return }
+  const el = document.getElementById("three"), w = el.clientWidth, h = el.clientHeight;
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(hex(css("--paper")));
+  const cam = new THREE.PerspectiveCamera(45, w / h, .1, 200);
+  const cx = (B.x0 + B.x1) / 2, cy = (B.y0 + B.y1) / 2;
+  cam.position.set(cx, cy - 14, 14); cam.up.set(0, 0, 1);
+  const ren = new THREE.WebGLRenderer({ antialias: true }); ren.setSize(w, h); ren.setPixelRatio(devicePixelRatio); el.appendChild(ren.domElement);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, .9)); const sun = new THREE.DirectionalLight(0xffffff, .6); sun.position.set(5, -8, 12); scene.add(sun);
+  const root = new THREE.Group(); scene.add(root);
+  const ctl = new THREE.OrbitControls(cam, ren.domElement); ctl.target.set(cx, cy, 0); ctl.update();
+  three = { scene, cam, ren, ctl, root, el };
+  fill3d();
+  (function loop() { if (!document.getElementById("three").hidden) ren.render(scene, cam); requestAnimationFrame(loop) })();
+}
+function fill3d() {
+  const { root } = three, k = +document.getElementById("exag").value;
+  while (root.children.length) root.remove(root.children[0]);
+  const box = (x, y, z, sx, sy, sz, color, opacity = 1) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), new THREE.MeshLambertMaterial({ color, transparent: opacity < 1, opacity }));
+    m.position.set(x, y, z); root.add(m); return m;
+  };
+  const base = -0.2 * k;
+  D.ground.forEach((row, i) => row.forEach((hh, j) => {
+    if (hh === null) return;
+    const top = hh * k, x = D.lo[0] + (j + .5) * D.tile, y = D.lo[1] + (i + .5) * D.tile;
+    const room = roomAt(x, y), wet = room && surf[room.name] === "water";
+    box(x, y, (top + base) / 2, D.tile * .98, D.tile * .98, top - base, wet ? hex(css("--water")) : hcol(hh), wet ? .8 : 1);
+  }));
+  D.walls.forEach(([a, b]) => { const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy); const m = box((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, .45, L, .08, .9, hex(css("--wall")), .55); m.rotation.z = Math.atan2(dy, dx) });
+  D.objects.forEach(o => { const m = box(o.c[0], o.c[1], (o.s[2] || .4) / 2 + .02, o.s[0], o.s[1], o.s[2] || .4, 0x9aa49f, .5); m.rotation.z = o.yaw });
+  D.steps.forEach(s => { const L = Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]); const m = box((s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2, .3 * k / 6 + .2, L, .05, .05, hex(css("--step"))); m.rotation.z = Math.atan2(s.b[1] - s.a[1], s.b[0] - s.a[0]) });
+}
+
+// --- side panel
+function panel() {
+  document.getElementById("rooms").innerHTML = D.rooms.map(r => {
+    const u = use(r);
+    return `<tr><td>${r.label}</td><td>${cm(r.level)}</td><td>${(r.spread * 100).toFixed(0)} cm</td>
+      <td><select data-room="${r.name}" id="s-${r.name}" aria-label="surface of ${r.label}">${Object.keys(SURF).map(s => `<option${s === surf[r.name] ? " selected" : ""}>${s}</option>`).join("")}</select></td>
+      <td><span class="pill p-${u === "no-go" ? "nogo" : u}">${u}</span></td></tr>`;
+  }).join("");
+  const pairs = {};
+  D.steps.forEach(s => { const k = s.rooms.join(" ↔ "); pairs[k] = Math.max(pairs[k] || 0, s.h) });
+  document.getElementById("steps").innerHTML = Object.entries(pairs).sort((a, b) => b[1] - a[1]).map(([k, h]) =>
+    `<tr><td>${k.replaceAll("_", " ")}</td><td>${Math.round(h * 100)} cm</td><td><span class="pill p-wall">wall</span></td></tr>`).join("");
+  document.querySelectorAll("select[data-room]").forEach(s => s.onchange = () => {
+    surf[s.dataset.room] = s.value; try { localStorage.setItem(KEY, JSON.stringify(surf)) } catch (e) {}
+    panel(); drawPlan(); if (three) fill3d();
+  });
+  document.getElementById("out").value = JSON.stringify({
+    house: D.house, rules: { max_step_m: 0.015, sill_m: [0.01, 0.02], step_noise_m: 0.05 },
+    rooms: D.rooms.map(r => ({ name: r.name, level_m: r.level, spread_m: r.spread, surface: surf[r.name], friction: SURF[surf[r.name]], use: use(r) })),
+    steps: Object.entries(pairs).map(([k, h]) => ({ rooms: k.split(" ↔ "), h_m: +h.toFixed(3), as: "wall" })),
+    doors: D.doors.map(d => ({ c: d.c, w: d.w, axis: d.axis, sill_m: d.sill })),
+  }, null, 1);
+}
+document.getElementById("copy").onclick = () => {
+  const t = document.getElementById("out"), say = m => document.getElementById("copied").textContent = m;
+  navigator.clipboard.writeText(t.value).then(() => say("Copied."), () => { t.select(); say("Selected: press ⌘C.") });
+};
+const tab = three3d => {
+  document.getElementById("t-plan").setAttribute("aria-pressed", !three3d); document.getElementById("t-3d").setAttribute("aria-pressed", three3d);
+  cv.hidden = three3d; document.getElementById("three").hidden = !three3d; document.getElementById("exag-box").hidden = !three3d;
+  if (three3d && !three) build3d(); else if (!three3d) drawPlan();
+};
+document.getElementById("t-plan").onclick = () => tab(false);
+document.getElementById("t-3d").onclick = () => tab(true);
+document.getElementById("exag").oninput = e => { document.getElementById("exag-v").textContent = e.target.value; if (three) fill3d() };
+addEventListener("resize", () => { drawPlan(); if (three) { const { el, cam, ren } = three; cam.aspect = el.clientWidth / el.clientHeight; cam.updateProjectionMatrix(); ren.setSize(el.clientWidth, el.clientHeight) } });
+panel(); drawPlan();
+</script>
+</body>
+</html>

@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>House Twin Maps</title>
+<style>
+/* Layout: one column app. Sign in → a grid of map cards → one map with tabs (floor plan, 3D, rooms). */
+:root {
+  --bg: #F3F4F1; --card: #FFFFFF; --ink: #17201B; --muted: #5C6861; --line: #D5DBD6; --wall: #1C2420;
+  --accent: #0B6B5A; --accent-ink: #FFFFFF; --warn: #9A6412; --bad: #B3261E; --door: #0B6B5A;
+  --f-body: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --f-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121412; --card: #1B201D; --ink: #E7ECE8; --muted: #9BA7A0; --line: #2E3733; --wall: #E7ECE8;
+  --accent: #46C2A8; --accent-ink: #0E1A16; --warn: #E2AE52; --bad: #FF7A70; --door: #46C2A8; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #121412; --card: #1B201D; --ink: #E7ECE8; --muted: #9BA7A0; --line: #2E3733; --wall: #E7ECE8;
+  --accent: #46C2A8; --accent-ink: #0E1A16; --warn: #E2AE52; --bad: #FF7A70; --door: #46C2A8; color-scheme: dark }
+* { box-sizing: border-box }
+[hidden] { display: none !important }
+html, body { height: 100% }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 15px/1.45 var(--f-body) }
+header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--card); position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2 }
+header h1 { font-size: 1.1rem; margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+main { max-width: 1100px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 40px }
+button, input { font: inherit }
+button { font-weight: 600; border: 1.5px solid var(--line); background: var(--card); color: var(--ink); padding: 8px 14px; border-radius: 9px; cursor: pointer }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent) }
+button:disabled { opacity: .5; cursor: default }
+button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+input { width: 100%; padding: 9px 11px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink) }
+.muted { color: var(--muted) }
+.mono { font-family: var(--f-mono); font-size: .82rem }
+.err { color: var(--bad); min-height: 1.4em; font-size: .9rem }
+/* sign in */
+.signin { max-width: 380px; margin: 10vh auto 0; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px; display: grid; gap: 12px }
+.signin h2 { margin: 0; font-size: 1.4rem; text-wrap: balance }
+.signin label { display: grid; gap: 4px; font-size: .88rem; color: var(--muted) }
+/* maps */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px }
+.map { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 8px; text-align: left; font-weight: 400 }
+.map:hover { border-color: var(--muted) }
+.map h3 { margin: 0; font-size: 1.02rem }
+.facts { display: flex; gap: 14px; font-variant-numeric: tabular-nums; font-size: .9rem }
+.pill { justify-self: start; font: 600 .72rem var(--f-mono); padding: 2px 8px; border-radius: 99px; border: 1.5px solid currentColor }
+.s-done { color: var(--accent) } .s-building { color: var(--warn) } .s-failed, .s-not.built { color: var(--bad) }
+.empty { background: var(--card); border: 1px dashed var(--line); border-radius: 12px; padding: 24px; text-align: center }
+/* one map */
+.tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap }
+.tabs button[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink) }
+.pane { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden }
+#plan { display: block; width: 100%; height: min(70vh, 640px) }
+#frame { display: block; width: 100%; height: min(75vh, 700px); border: 0 }
+.rooms { display: grid; gap: 0 }
+.room { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line) }
+.room .sw { width: 14px; height: 14px; border-radius: 4px }
+.room .area { font-variant-numeric: tabular-nums; color: var(--muted); font-size: .88rem }
+.room small { display: block; color: var(--muted); font: .74rem var(--f-mono); margin-top: 2px }
+.save { display: flex; gap: 12px; align-items: center; padding: 12px 14px; flex-wrap: wrap }
+</style>
+</head>
+<body>
+<header>
+  <button id="back" hidden aria-label="Back to my maps">←</button>
+  <h1 id="title">House Twin</h1>
+  <button id="signout" hidden>Sign out</button>
+</header>
+<main>
+  <form class="signin" id="signin" hidden>
+    <h2>Your home, mapped</h2>
+    <p class="muted" style="margin:0">Sign in with the same account as the iPhone app.</p>
+    <label>User <input id="user" autocomplete="username" required></label>
+    <label>Password <input id="pass" type="password" autocomplete="current-password" required></label>
+    <button class="primary" id="go">Sign in</button>
+    <div class="err" id="err" role="alert"></div>
+  </form>
+
+  <section id="maps" hidden>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <section id="one" hidden>
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-plan" aria-selected="true">Floor plan</button>
+      <button role="tab" id="tab-3d" aria-selected="false">3D</button>
+      <button role="tab" id="tab-rooms" aria-selected="false">Rooms</button>
+    </div>
+    <div class="pane" id="p-plan"><canvas id="plan"></canvas></div>
+    <div class="pane" id="p-3d" hidden><iframe id="frame" title="3D view of the home"></iframe></div>
+    <div class="pane" id="p-rooms" hidden>
+      <div class="rooms" id="rooms"></div>
+      <div class="save"><button class="primary" id="saveRooms">Save names</button><span class="muted" id="saved">The robot and the voice commands use these names.</span></div>
+    </div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const store = { get: k => { try { return localStorage.getItem(k) } catch (e) { return null } },
+                set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v) } catch (e) {} } };
+let TOKEN = store.get("token"), house = null, session = null, poll = null;
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const HUES = [160, 30, 210, 340, 90, 260, 10, 190, 50, 290];
+const roomColour = (i, a) => `hsla(${HUES[i % HUES.length]}, 55%, 55%, ${a})`;
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { "X-API-Key": TOKEN || "", ...(opts.body ? { "Content-Type": "application/json" } : {}) } });
+  if (r.status === 401) { signOut(); throw new Error("Signed out: sign in again.") }
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `Error ${r.status}`);
+  return r;
+}
+function when(s) {
+  const m = /(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})/.exec(s);
+  return m ? new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5]).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : s;
+}
+function show(view) {
+  ["signin", "maps", "one"].forEach(v => $(v).hidden = v !== view);
+  $("signout").hidden = view === "signin"; $("back").hidden = view !== "one";
+  clearInterval(poll);
+}
+
+// --- sign in
+$("signin").onsubmit = async e => {
+  e.preventDefault(); $("err").textContent = ""; $("go").disabled = true;
+  try {
+    const r = await fetch("/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user: $("user").value, password: $("pass").value }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || "Sign in failed");
+    TOKEN = j.token; store.set("token", TOKEN); listMaps();
+  } catch (err) { $("err").textContent = err.message } finally { $("go").disabled = false }
+};
+function signOut() { TOKEN = null; store.set("token", null); $("title").textContent = "House Twin"; show("signin") }
+$("signout").onclick = signOut;
+$("back").onclick = () => listMaps();
+
+// --- my maps
+async function listMaps() {
+  show("maps"); $("title").textContent = "My maps";
+  try {
+    const maps = await (await api("/lidar/maps")).json();
+    $("grid").innerHTML = maps.length ? maps.map(m => `
+      <button class="map" data-s="${esc(m.session)}" ${m.state === "done" ? "" : "data-off"}>
+        <h3>${esc(when(m.session))}</h3>
+        <span class="pill s-${esc(m.state).replace(" ", ".")}">${m.state === "done" ? "ready" : esc(m.state)}</span>
+        ${m.state === "done" ? `<div class="facts"><span>${m.rooms} rooms</span><span>${m.area_m2} m²</span></div>` : `<div class="muted">${m.state === "building" ? "Building your map, a few minutes…" : "Not ready. Build it again from the app."}</div>`}
+        <span class="mono muted">${esc(m.session)}</span>
+      </button>`).join("") : `<div class="empty"><b>No maps yet.</b><p class="muted">Record a walk with the iPhone app and upload it: it appears here.</p></div>`;
+    document.querySelectorAll(".map").forEach(b => b.onclick = () => b.hasAttribute("data-off") || openMap(b.dataset.s));
+    if (maps.some(m => m.state === "building")) poll = setInterval(listMaps, 15000);
+  } catch (err) { $("grid").innerHTML = `<div class="empty err">${esc(err.message)}</div>` }
+}
+
+// --- one map
+async function openMap(s) {
+  session = s; show("one"); $("title").textContent = when(s); tab("plan");
+  try {
+    house = await (await api(`/lidar/file?session=${encodeURIComponent(s)}&name=house.json`)).json();
+    drawPlan(); roomsList();
+  } catch (err) { $("p-plan").innerHTML = `<div class="empty err">${esc(err.message)}</div>` }
+}
+function tab(t) {
+  ["plan", "3d", "rooms"].forEach(k => { $("tab-" + k).setAttribute("aria-selected", k === t); $("p-" + k).hidden = k !== t });
+  if (t === "3d" && !$("frame").src.includes(encodeURIComponent(session))) $("frame").src = `/lidar/3d?s=${encodeURIComponent(session)}&k=${encodeURIComponent(TOKEN)}`;
+  if (t === "plan" && house) drawPlan();
+}
+["plan", "3d", "rooms"].forEach(k => $("tab-" + k).onclick = () => tab(k));
+
+const area = p => Math.abs(p.reduce((s, [x, y], i) => { const [u, v] = p[(i + 1) % p.length]; return s + x * v - u * y }, 0)) / 2;
+const centre = p => [p.reduce((s, q) => s + q[0], 0) / p.length, p.reduce((s, q) => s + q[1], 0) / p.length];
+
+function drawPlan() {
+  const cv = $("plan"), r = cv.getBoundingClientRect(), dpr = devicePixelRatio || 1, ctx = cv.getContext("2d");
+  if (!r.width) return;
+  cv.width = r.width * dpr; cv.height = r.height * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const pts = [...house.walls.flatMap(w => [w.a, w.b]), ...house.rooms.flatMap(q => q.polygon || [])];
+  const x0 = Math.min(...pts.map(p => p[0])), x1 = Math.max(...pts.map(p => p[0])), y0 = Math.min(...pts.map(p => p[1])), y1 = Math.max(...pts.map(p => p[1]));
+  const S = Math.min((r.width - 40) / (x1 - x0), (r.height - 40) / (y1 - y0));
+  const ox = (r.width - (x1 - x0) * S) / 2, oy = (r.height - (y1 - y0) * S) / 2;
+  const P = (x, y) => [ox + (x - x0) * S, oy + (y1 - y) * S];
+  ctx.fillStyle = css("--card"); ctx.fillRect(0, 0, r.width, r.height);
+  house.rooms.forEach((q, i) => {
+    if (!q.polygon) return;
+    ctx.beginPath(); q.polygon.forEach((p, k) => ctx[k ? "lineTo" : "moveTo"](...P(...p))); ctx.closePath();
+    ctx.fillStyle = roomColour(i, .28); ctx.fill();
+  });
+  ctx.fillStyle = css("--line");
+  (house.objects || []).forEach(o => { ctx.save(); ctx.translate(...P(...o.center)); ctx.rotate(-(o.yaw || 0)); ctx.fillRect(-o.size[0] * S / 2, -o.size[1] * S / 2, o.size[0] * S, o.size[1] * S); ctx.restore() });
+  ctx.strokeStyle = css("--wall"); ctx.lineCap = "round"; ctx.lineWidth = Math.max(2, S * .08);
+  house.walls.forEach(w => { ctx.beginPath(); ctx.moveTo(...P(...w.a)); ctx.lineTo(...P(...w.b)); ctx.stroke() });
+  ctx.strokeStyle = css("--door"); ctx.lineWidth = Math.max(3, S * .1);
+  (house.doors || []).forEach(d => { const [x, y] = d.center, h = d.width / 2, a = d.axis ? [[x, y - h], [x, y + h]] : [[x - h, y], [x + h, y]]; ctx.beginPath(); ctx.moveTo(...P(...a[0])); ctx.lineTo(...P(...a[1])); ctx.stroke() });
+  ctx.textAlign = "center";
+  house.rooms.forEach(q => {
+    if (!q.polygon) return;
+    const [px, py] = P(...centre(q.polygon)), fs = Math.max(12, Math.min(18, S * .35));
+    ctx.font = `600 ${fs}px ${css("--f-body")}`; ctx.fillStyle = css("--ink"); ctx.fillText(q.label || q.name, px, py);
+    ctx.font = `${fs * .8}px ${css("--f-mono")}`; ctx.fillStyle = css("--muted"); ctx.fillText(area(q.polygon).toFixed(1) + " m²", px, py + fs * 1.1);
+  });
+}
+function roomsList() {
+  $("rooms").innerHTML = house.rooms.map((q, i) => `
+    <label class="room"><span class="sw" style="background:${roomColour(i, .8)}"></span>
+      <span><input id="r-${esc(q.name)}" data-room="${esc(q.name)}" value="${esc(q.label || q.name)}" maxlength="40" aria-label="Name of ${esc(q.name)}"><small>${esc(q.name)}</small></span>
+      <span class="area">${q.polygon ? area(q.polygon).toFixed(1) + " m²" : ""}</span></label>`).join("");
+}
+$("saveRooms").onclick = async () => {
+  const labels = Object.fromEntries([...document.querySelectorAll("[data-room]")].map(i => [i.dataset.room, i.value]));
+  $("saveRooms").disabled = true;
+  try {
+    const r = await (await api(`/lidar/rooms?session=${encodeURIComponent(session)}`, { method: "POST", body: JSON.stringify({ labels }) })).json();
+    r.rooms.forEach(x => { const q = house.rooms.find(y => y.name === x.name); if (q) q.label = x.label });
+    $("saved").textContent = "Saved. The robot will use these names."; drawPlan();
+  } catch (err) { $("saved").textContent = err.message } finally { $("saveRooms").disabled = false }
+};
+addEventListener("resize", () => { if (!$("one").hidden && house) drawPlan() });
+
+TOKEN ? listMaps() : show("signin");
+</script>
+</body>
+</html>

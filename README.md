@@ -6,7 +6,7 @@ language, and asks you when it isn't sure.**
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 ![Track: Physical AI](https://img.shields.io/badge/track-Physical%20AI-green)
 ![NVIDIA Nemotron](https://img.shields.io/badge/NVIDIA-Nemotron-76b900)
-· Video: *(YouTube link, Friday)* · Nebius × NVIDIA Global AI Hackathon, Physical AI track · Jose Mauricio Carpio (solo)
+· **Live page: [nebius.adtomic.co](https://nebius.adtomic.co)** · Video: *(YouTube link, Friday)* · Nebius × NVIDIA Global AI Hackathon, Physical AI track · Jose Mauricio Carpio (solo)
 
 > "Revisa la cocina y luego el jardín." The robot hears it (Nemotron Omni), picks the two rooms of *this* home
 > (Nemotron Ultra), says its plan aloud, walks there with its own sensors and reports back. The robot is Pollen's
@@ -34,12 +34,15 @@ numbers below were measured on **NVIDIA's API catalog (same Nemotron models)**, 
 opened from Peru during the hackathon. Switching is one setting: `MODEL_PROVIDER=nebius scripts/nebius_rerun.sh`
 re-runs every eval quoted here on Token Factory (see [Switch to Token Factory](#switch-to-token-factory)).
 
-| model | job | when | measured (dev, NVIDIA catalog) |
-|---|---|---|---|
-| **Nemotron 3 Ultra** | spoken command → which rooms, in which order (tool calls over this home's `house.json`); the robot's questions; the patrol report | once per command, per question, per patrol | commands: 91.4 % right vs 55.6 % for keywords; p50 1.9 s, $0.97 per 1000 |
-| **Nemotron 3 Nano Omni** | microphone audio → words | once per spoken command | p50 2.0 s, p95 4.9 s; 5 of 14 live calls failed (503) |
-| **Nemotron 3.5 Super VL** | camera frame → which room | offline test on real frames | 78.9 % vs 75.2 % for the colour vote: no real gain (see Limits) |
-| Nemotron 3.5 Lightning | the same command test, cheaper | tested, not used | 82.1 % right |
+| model | job | when | code | measured (dev, NVIDIA catalog) |
+|---|---|---|---|---|
+| **Nemotron 3 Ultra** | spoken command → which rooms, in which order (tool calls over this home's `house.json`); the robot's questions; the patrol report | once per command, per question, per patrol | [`agent/language.py`](agent/language.py) | commands: 91.4 % right vs 55.6 % for keywords; p50 1.9 s, $0.97 per 1000 |
+| **Nemotron 3 Nano Omni** | microphone audio → words | once per spoken command | [`agent/voice.py`](agent/voice.py) | p50 2.0 s, p95 4.9 s; 5 of 14 live calls failed (503) |
+| **Nemotron 3.5 Super VL** | camera frame → which room | offline test on real frames | [`eval/vl_rooms.py`](eval/vl_rooms.py) | 78.9 % vs 75.2 % for the colour vote: no real gain (see Limits) |
+| Nemotron 3.5 Lightning | the same command test, cheaper | tested, not used | [`eval/commands.py`](eval/commands.py) | 82.1 % right |
+
+Other NVIDIA tools: **Isaac Sim 6.2** and OpenUSD for the twin with any robot body ([below](#any-robot-body-the-twin-in-nvidia-isaac-sim)),
+NVIDIA's **Nova Carter** and **Jetbot** robot models.
 
 Models never steer: the 5 Hz loop (sense → locate → decide → move) never waits on a call. A command becomes goals, A*
 plans every path, and the particle filter decides where the robot is. If a call fails, the robot falls back to a
@@ -57,6 +60,48 @@ keyword plan and says so.
    report (`agent/walk.py`, `agent/film.py`).
 
 ![Architecture](docs/architecture.svg)
+
+## Any robot body: the twin in NVIDIA Isaac Sim
+The same `house.json` exports to OpenUSD with physics ([`twin/to_usd.py`](twin/to_usd.py)): each room's floor at its
+measured height, so the steps are real; walls with door gaps; a collider on every solid; rooms as named prims; the scan's
+colours on top. [`sim_isaac/plan_route.py`](sim_isaac/plan_route.py) turns a spoken command into a route for one robot
+body: Ultra picks the room, A* plans with that body's width, and the route stops 40 cm before the first step taller than
+the body can climb, where Ultra words a question for a person. [`sim_isaac/house_clip.py`](sim_isaac/house_clip.py) runs
+headless in Isaac Sim 6.2 on an RTX 4090 and drives NVIDIA's Nova Carter along that route on its own wheels, under physics.
+
+![Nova Carter in the twin, stopped before the step](docs/isaac_carter.jpg)
+
+"Go check the kitchen, I think I left the stove on" → Ultra: kitchen (1.4 s) → Carter drives the passway and stops 7 cm
+from the planned stop, before the 14 cm step into the kitchen → *"I can climb 3 cm, but the floor steps 14 cm from
+passway into kitchen. Can you check kitchen for me?"*
+
+| body | radius | climbs (assumed, not measured) |
+|---|---|---|
+| NVIDIA Nova Carter | 30 cm | 3 cm |
+| Pollen Microduck | 12 cm | 1.5 cm |
+| NVIDIA Jetbot | 10 cm | 1 cm |
+
+```
+python -m twin.to_usd out/houses/<name>                                  # → house.usd
+python -m sim_isaac.plan_route out/houses/<name> "check the kitchen" --robot carter   # → isaac/route.json
+python sim_isaac/house_clip.py house.usd route.json frames/              # on the Isaac Sim machine
+python -m sim_isaac.make_clip frames/ out/houses/<name>/isaac/route.json carter_kitchen.mp4
+```
+Each file's docstring has the full `uv run` line. The floor heights come from [`twin/grounds.py`](twin/grounds.py), which
+also writes a training-grounds page: the floor height of every 50 cm tile, the steps between rooms, door sills and the
+pool as a no-go zone, for training a walking policy on this home's floors.
+
+## Repo map
+| path | what |
+|---|---|
+| `app/` | iPhone app (SwiftUI, ARKit): record RGB + LiDAR + pose with room taps, sign in, upload, My maps |
+| `lidar/pipeline`, `twin/` | the twin build (OpenCV 5): floor, walls, doors, rooms, landmarks → `house.json`; MuJoCo (`to_mjcf.py`), USD (`to_usd.py`), training grounds (`grounds.py`), room editor (`rooms_edit.py`) |
+| `agent/` | the robot's brain: self-location, routes, the live walk, Nemotron client (`nebius.py`), language and voice |
+| `sim_isaac/` | routes per robot body and the Isaac Sim clip |
+| `eval/` | the command test, self-location in 22 test houses, Nemotron VL on real frames, adversarial tests |
+| `service/` | FastAPI server: sign in, upload, twin build per upload, the web maps page (`/web`) |
+| `site/` | the public page, [nebius.adtomic.co](https://nebius.adtomic.co) |
+| `samples/` | a built sample home and a walk trace, to try everything without an iPhone |
 
 ## Results
 One set of numbers; each comes from the results file named next to it.
@@ -107,6 +152,10 @@ iPhone app, the twin build, the self-location and the patrol in the twin. For th
 - **A 162-command test** on two homes with unsafe and vague requests (`eval/commands.py`).
 - **Nemotron VL on real iPhone frames** vs the colour vote (`eval/vl_rooms.py`), and in the self-location test.
 - **The room editor**, and the real flat's twin rebuilt with 8 named rooms.
+- **Isaac Sim**: the twin as OpenUSD with real floor steps, routes per robot body that stop at steps too tall for it, and
+  NVIDIA's Nova Carter driving one under physics (`twin/to_usd.py`, `sim_isaac/`).
+- **Training grounds**: floor height per tile and the steps between rooms, from the scan (`twin/grounds.py`).
+- **Web maps** (`/web`): sign in, see the maps, floor plan, 3D, rename rooms.
 - Claude (Bedrock) and Gemini off the default path; Apache-2.0 license; one client and one log for every model call.
 
 ## Limits
@@ -121,6 +170,8 @@ iPhone app, the twin build, the self-location and the patrol in the twin. For th
   plan, which matched room words in an unsafe command and moved. The keyword fallback needs to ask instead.
 - **The commands were written by the developer.** Rows from other people go in `eval/command_cases/` with their name.
 - **Not yet on Token Factory**: see above. Omni on NVIDIA's free tier failed 5 of 14 live calls (503).
+- **Isaac Sim shows one body** (Nova Carter). The step limits per body are assumed, not measured; the scan's coloured
+  points have no collider (physics runs on the boxes).
 - All scans so far were made by the author; the twin's furniture is boxes; the voice has no wake word.
 
 ## License

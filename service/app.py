@@ -21,8 +21,9 @@ from v0.agent import estimate
 ROOT = Path(__file__).parent
 UPLOADS = Path(os.environ.get("UPLOAD_DIR", ROOT / "uploads"))
 API_KEY = os.environ["API_KEY"]
-APP_USER = os.environ.get("APP_USER", "demo")
-APP_PASSWORD_HASH = os.environ.get("APP_PASSWORD_HASH", "")  # python -m service.passwd; empty = login off
+# accounts: APP_USERS="name=scrypt:...,name2=scrypt:..." (python -m service.passwd), or the older single APP_USER + APP_PASSWORD_HASH
+USERS = dict(u.split("=", 1) for u in os.environ.get("APP_USERS", "").split(",") if "=" in u) or \
+    {os.environ.get("APP_USER", "demo"): os.environ.get("APP_PASSWORD_HASH", "")}
 TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "")
 TOKEN_DAYS = 30
 SAFE = re.compile(r"^[a-z0-9_-]{1,40}$")
@@ -34,16 +35,15 @@ build = None  # one LiDAR house build at a time
 failed = {}  # client ip → times of failed logins in the last 10 min
 
 
-def sign(exp: int) -> str:
-    msg = f"{APP_USER}.{APP_PASSWORD_HASH}.{exp}".encode()  # a new password or user revokes every token
+def sign(user: str, exp: int) -> str:
+    msg = f"{user}.{USERS.get(user, '')}.{exp}".encode()  # a new password or a removed user revokes that user's tokens
     return hmac.new(TOKEN_SECRET.encode(), msg, hashlib.sha256).hexdigest()
 
 
 def token_ok(token: str) -> bool:
-    kind, _, rest = token.partition(".")
-    exp, _, sig = rest.partition(".")
-    return (kind == "t1" and exp.isascii() and exp.isdigit() and int(exp) > time.time() and bool(TOKEN_SECRET and APP_PASSWORD_HASH)
-            and hmac.compare_digest(sig.encode(), sign(int(exp)).encode()))
+    kind, user, exp, sig = (token.split(".") + ["", "", ""])[:4]
+    return (kind == "t2" and exp.isascii() and exp.isdigit() and int(exp) > time.time() and bool(TOKEN_SECRET and USERS.get(user))
+            and hmac.compare_digest(sig.encode(), sign(user, int(exp)).encode()))
 
 
 def credential(x_api_key: str = Header(""), authorization: str = Header("")):
@@ -68,18 +68,23 @@ def login(body: Login, request: Request):
     recent = [t for t in failed.get(ip, []) if now - t < 600]
     if len(recent) >= 5:
         raise HTTPException(429, "too many attempts, try again in a few minutes")
-    ok = bool(APP_PASSWORD_HASH and TOKEN_SECRET) and verify(body.password, APP_PASSWORD_HASH)
-    if not (hmac.compare_digest(body.user.encode(), APP_USER.encode()) and ok):
+    stored = USERS.get(body.user, "")
+    if not (stored and TOKEN_SECRET and SAFE.match(body.user) and verify(body.password, stored)):
         failed[ip] = recent + [now]
         raise HTTPException(401, "wrong user or password")
     failed.pop(ip, None)
     exp = int(now) + TOKEN_DAYS * 86400
-    return {"token": f"t1.{exp}.{sign(exp)}", "user": APP_USER, "expires": exp}
+    return {"token": f"t2.{body.user}.{exp}.{sign(body.user, exp)}", "user": body.user, "expires": exp}
 
 
 @app.get("/")
 def index():
-    return RedirectResponse("/lidar")
+    return RedirectResponse("/web")
+
+
+@app.get("/web")
+def web_page():
+    return FileResponse(ROOT / "static/web.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.post("/upload")
@@ -165,7 +170,8 @@ def lidar_maps(x_api_key: str = Depends(credential)):
         m = {"session": session, "state": state(session)}
         if m["state"] == "done":
             spaces = json.loads((UPLOADS / session / "house" / "report.json").read_text()).get("spaces", {})
-            m |= {"rooms": len(spaces), "area_m2": round(sum(s["area_m2"] for s in spaces.values()), 1)}
+            rooms = json.loads((UPLOADS / session / "house" / "house.json").read_text())["rooms"]  # after any edits
+            m |= {"rooms": len(rooms), "area_m2": round(sum(s["area_m2"] for s in spaces.values()), 1)}
         maps.append(m)
     return maps
 
@@ -250,6 +256,24 @@ def lidar_file(session: str, name: str, x_api_key: str = Depends(credential)):
     if name not in {"top.png", "house.json", "report.json", "candidates.json", "cloud.bin", "stage_floor.png", "stage_occupancy.png", "mission.json"}:
         raise HTTPException(400, "bad name")
     return FileResponse(session_dir(session) / "house" / name)
+
+
+@app.post("/lidar/rooms")
+async def lidar_rooms(session: str, request: Request, x_api_key: str = Depends(credential)):
+    """New labels for a built map's rooms ({labels: {room name: label}}): what the person and the planner call them."""
+    check(x_api_key)
+    path = session_dir(session) / "house" / "house.json"
+    if not path.exists():
+        raise HTTPException(404, "map not built")
+    labels = (await request.json()).get("labels", {})
+    h = json.loads(path.read_text())
+    if not (path.parent / "house.before-labels.json").exists():
+        (path.parent / "house.before-labels.json").write_text(path.read_text())
+    for r in h["rooms"]:
+        if str(labels.get(r["name"], "")).strip():
+            r["label"] = str(labels[r["name"]]).strip()[:40]
+    path.write_text(json.dumps(h, indent=1))
+    return {"rooms": [{"name": r["name"], "label": r.get("label", r["name"])} for r in h["rooms"]]}
 
 
 @app.get("/lidar/capture")
