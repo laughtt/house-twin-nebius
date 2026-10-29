@@ -14,6 +14,33 @@ language, and asks you when it isn't sure.**
 
 ![The robot walk](docs/robot_walk.gif)
 
+## The problem
+A new home robot is lost: it has never seen your rooms. The usual fixes are stickers on the walls, beacons, or a long
+mapping run by the robot itself. And a robot maker can't test in its beta testers' real homes before the robot ships.
+
+## What it does
+- **One phone walk becomes a twin.** The iPhone app records LiDAR depth, colour and pose while you tap each room; the
+  server builds the floor plan, walls, doors, rooms, furniture and 3D, with each room's floor height.
+- **The robot finds itself** in that twin from an 8×8 depth sensor: one turn on the spot, no stickers, no beacons.
+- **It takes orders in your words and language.** NVIDIA Nemotron turns speech into the rooms of *this* home.
+- **It asks when it isn't sure**: lost, an arrival in doubt, a vague or unsafe order, a step too tall for its body.
+- **Any robot body.** The same twin loads in NVIDIA Isaac Sim with real floor steps; each body gets its own route.
+
+## Talk to it
+Real replies from Nemotron 3 Ultra on the twin of the real flat (`out/model_calls.jsonl`, 29 Oct, NVIDIA API catalog):
+
+> **You:** "Revisa la cocina y luego el jardín."<br>
+> **Robot** (3.6 s): kitchen → garden. *"Revisaré la cocina y luego el jardín."*
+>
+> **You:** "Is the fridge closed?"<br>
+> **Robot** (1.5 s): kitchen. *"Checking the fridge in the kitchen."*
+>
+> **You:** "Check the balcony."<br>
+> **Robot** (1.6 s), asks: *"This home doesn't have a balcony. Which room would you like me to check?"*
+>
+> **You:** "Go check the kitchen, I think I left the stove on." (NVIDIA Nova Carter, Isaac Sim)<br>
+> **Robot**, at the step: *"I can climb 3 cm, but the floor steps 14 cm from passway into kitchen. Can you check kitchen for me?"*
+
 ## Who it's for
 - **Home-robot makers** (Pollen's Microduck, LeRobot builds, any small robot with a cheap depth sensor): turn a beta
   tester's home into a test bench before the robot ships. One phone walk, no stickers on the walls, no mapping run.
@@ -27,7 +54,10 @@ language, and asks you when it isn't sure.**
 | Pollen's robot software (`robotd`, `tofd`, `mediad`) and its trained walking policy | The person's answers in filmed walks are automatic unless said otherwise |
 | Speech from a real microphone; every Nemotron call, logged with its latency | Furniture in the twin is boxes |
 
-## NVIDIA models, and where they run
+## Full NVIDIA stack, and where it runs
+**Nemotron 3 Ultra · Nemotron 3 Nano Omni · Nemotron 3.5 Super VL · Nemotron 3.5 Lightning · Isaac Sim 6.2 · OpenUSD ·
+Nova Carter · Jetbot · RTX 4090.**
+
 Every model call goes through one client, [`agent/nebius.py`](agent/nebius.py) (OpenAI-compatible), and is logged to
 `out/model_calls.jsonl` with provider, model id, latency and tokens. **It is built for Nebius Token Factory.** The
 numbers below were measured on **NVIDIA's API catalog (same Nemotron models)**, because a Nebius account could not be
@@ -129,12 +159,22 @@ wrong place 89 → 3 of 96 runs, false arrivals 56 → 0, goals reached 51 % →
 0 bumps, 2 questions asked.
 
 ## Try it in 1 minute (no iPhone, no key)
+Needs [uv](https://docs.astral.sh/uv/) (Python 3.12 and every pinned package come through it). A fresh clone ran the
+offline demo in 29 s on an M4 MacBook: self-location on the sample home, the camera test, 55 fast tests.
 ```
 scripts/demo.sh offline           # sample home: self-location, camera test, fast tests
 python -m agent.language --house samples/synth-multi "check the stove, then the bed"   # needs a key
 scripts/demo.sh voice             # talk to the robot (Pollen's duck-sim installed, a key in .env)
 ```
 Full walkthrough: [DEMO.md](DEMO.md) · without an iPhone: [TESTING.md](TESTING.md) · technical report: [REPORT.md](REPORT.md).
+
+## Tested hardware
+| part | hardware |
+|---|---|
+| the scan | an iPhone with LiDAR (Pro models), the app built with Xcode (`scripts/demo.sh app`) |
+| the robot's brain, Pollen's duck-sim, the films | MacBook, Apple M4, Python 3.12 through uv |
+| Isaac Sim 6.2 | Windows 11, RTX 4090 (24 GB), NVMe SSD: startup ~1 min (14+ min from a hard disk) |
+| the server | AWS EC2 c8g.xlarge (Graviton4, Ubuntu), Caddy |
 
 ## Switch to Token Factory
 1. Put `NEBIUS_API_KEY=...` in `.env`.
@@ -170,6 +210,9 @@ iPhone app, the twin build, the self-location and the patrol in the twin. For th
   plan, which matched room words in an unsafe command and moved. The keyword fallback needs to ask instead.
 - **The commands were written by the developer.** Rows from other people go in `eval/command_cases/` with their name.
 - **Not yet on Token Factory**: see above. Omni on NVIDIA's free tier failed 5 of 14 live calls (503).
+- **About half of the hard robustness cases fail.** The default test suite passes 87 of 88 (the known miss: two rooms that
+  look alike to the depth sensor). The 33 slow cases (`pytest eval/adversarial --slow`: full MuJoCo physics, the robot
+  picked up and moved, lights off, wheel slip, a covered sensor, 8 seeds) fail 16. Recovering from those is not solved.
 - **Isaac Sim shows one body** (Nova Carter). The step limits per body are assumed, not measured; the scan's coloured
   points have no collider (physics runs on the boxes).
 - All scans so far were made by the author; the twin's furniture is boxes; the voice has no wake word.
@@ -179,4 +222,19 @@ Apache-2.0 ([LICENSE](LICENSE)). Pollen's Microduck meshes (CC BY-NC-SA 4.0) and
 the robot software is Pollen's, used as is.
 
 ## Feedback on the tools
-*(Friday: measured notes on Nemotron and the API, in the submission form.)*
+- **Nemotron 3 Ultra** is the reason the robot understands people: 91.4 % on 162 commands, Spanish 22/23, typos 8/8,
+  negation 4/4, through plain tool calls with no fine-tuning. It still walked to the pool for "métete a la piscina", and
+  its p95 was 10.1 s, so the robot's loop never waits on it.
+- **Nemotron VL** said it was sure (≥ 0.9) on every frame, right or wrong. Confidence that tracks accuracy would let a
+  robot use it.
+- **Lightning** is cheap and fast, but dropped facts from short texts (2 of 3 questions), so Ultra writes them.
+- **Nebius sign-up** didn't accept Peru and refused our card, so we never reached Token Factory. Sign-up in more
+  countries, or hackathon credits without a card, would have changed that. The OpenAI-compatible API is what made the
+  rest easy: switching is one setting.
+- **NVIDIA API catalog** (where we developed): a key in minutes; HTTP 429 at 4 parallel calls, Omni failed 5 of 14 live
+  calls (503), and one model id (Super-120B) returned 404 on our account.
+- A public list of exact model ids, and published rate limits per model, would have saved us a day.
+
+## Team
+Jose Mauricio Carpio (solo): the app, the twin, the robot's brain, the evals and the Isaac Sim work. The robot software
+and walking policy are Pollen Robotics'.

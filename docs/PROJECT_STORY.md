@@ -1,126 +1,100 @@
 # House Twin Patrol
-**One walk with your iPhone. A robot that knows your home. No stickers.**
+**Walk through your home once with an iPhone. Any robot then knows every room, takes spoken orders in any language
+through NVIDIA Nemotron, and asks you when it isn't sure.**
 
 ## Inspiration
-Small home robots like Pollen's open-source **Microduck** are coming, but a new robot in a home is lost: it has never
-seen your rooms, and the usual fixes are stickers on the walls, beacons, or a long mapping run by the robot itself. We
-asked a simple question: *what if you could just show the robot your home first?* Everyone already carries a phone with
-a camera, and many have LiDAR. So we built a way to film a house once and give any robot a ready-made, measured map it
-can find itself in.
+Small home robots are coming. Pollen's open-source **Microduck** and the LeRobot builds are already in makers' hands. But
+a new robot in a home is lost: it has never seen your rooms. The usual fixes are stickers on the walls, beacons, or a
+long mapping run by the robot itself, often with a person watching. And the people building these robots can't test
+them in their beta testers' real homes before shipping.
+
+Everyone already carries a phone, and many phones have LiDAR. So we asked: *what if you could show the robot your home
+first, with one walk, and then just talk to it?* The end use we had in mind is simple: check-in rounds for someone
+living alone. "Is the stove off?" "Is someone in the garden?", asked in their own words and their own language.
 
 ## What it does
-House Twin Patrol turns one iPhone walk into a digital twin of your home, built with OpenCV 5 on AWS, and gives the
-robot a brain that finds itself, patrols every room and asks a person when it isn't sure.
-
-| What happens | What House Twin Patrol does |
+| You | House Twin Patrol |
 |---|---|
-| You walk through your home with the app | Records LiDAR depth, colour and the ARKit pose; you tap each room as you enter |
-| You tap Upload | The server on AWS Graviton builds the twin with OpenCV 5: floor, walls, doors, rooms, furniture, 3D |
-| The map is ready | My maps shows it: floor plan with room sizes, a 3D view, a notification |
-| The robot is switched on somewhere unknown | It turns once on the spot and matches that scan against every place in the map, and knows where it is |
-| The robot walks to a room | Every belief is checked against the depth sensor; if the walls stop fitting, it stops and looks again |
-| A strong guess appears across the house | Treated as a false positive: the robot keeps the position it trusted |
-| The camera sees the room | OpenCV votes for the room; if that changes a decision, it is logged and the route is planned again |
-| It reaches a goal, but the camera disagrees | "I think I'm in the bedroom, but the camera's colours say kitchen. Say I've arrived?" |
-| Someone wants to know why it did that | Every step is in a trace; a film replays it with the robot's eye, the map and the brain in words |
+| Walk through your home with the app, tapping each room as you enter | Records LiDAR depth, colour and the ARKit pose at about 4 frames a second |
+| Tap Upload | The server builds a measured twin: floor plan with room sizes, walls, doors, furniture, each room's floor height, a 3D view, a MuJoCo scene and an OpenUSD stage |
+| Switch the robot on anywhere | It turns once on the spot, matches its 8×8 depth readings against every place in the twin, and knows where it is. No stickers, no beacons |
+| Say *"Revisa la cocina y luego el jardín"* | **Nemotron 3 Nano Omni** writes the words down, **Nemotron 3 Ultra** picks the kitchen, then the garden, of *this* home, and the robot says its plan aloud |
+| Say something vague, impossible or unsafe | It asks instead: *"This home doesn't have a balcony. Which room would you like me to check?"* |
+| Use another robot | The same twin loads in **NVIDIA Isaac Sim**. Nova Carter drives toward the kitchen and stops before a 14 cm step it can't climb: *"I can climb 3 cm, but the floor steps 14 cm from passway into kitchen. Can you check kitchen for me?"* |
+| Say "alto" or "stop" | It stops at once, without a model |
 
-## Finding itself with a tiny depth sensor: the spin match
-The Microduck sees depth through an 8×8 sensor. One frame says almost nothing; a full turn says a lot. While the duck
-turns on the spot, its readings are stacked into one 360° scan. After the turn, that scan is compared with what the map
-says you would see from **every free spot in the house, at every heading**: roughly first, then precisely around the
-best places. It only counts as found when the best place clearly beats the runner-up. Directions where the sensor saw
-nothing are evidence too: "open space this way".
-
-## Verify before trust
-Being sure fast is easy. Being sure and right is the job.
-- **Fit check:** from where the robot thinks it is, the map predicts what each depth reading should be. If the readings
-  stop fitting, the robot knows it is lost and looks again. A reading *shorter* than the map is not counted against
-  it: that's a person, a bag, or the floor when the walking head tips down. You can't see through a wall, so only
-  *longer* readings contradict.
-- **Jump check:** once a position is trusted, a sudden estimate far across the house is a false positive. The guesses
-  near the trusted position stay the answer, and the robot keeps going.
-- **Arrival needs a fresh check:** in the middle of a big room nothing is in range, so the robot may keep driving on
-  what it knows but may not declare "I'm here" until the walls confirm it.
-
-## The agent loop: what the camera sees changes what the robot does
-Several times a second: sense → locate → see → decide → ask → act. OpenCV 5 reads every camera frame (`cvtColor`,
-`inRange`, `calcHist`): which room do these colours look like? That vote moves the robot's belief, and when a frame
-changes the decision, the trace records it. Here, from the live walk, a frame moved its belief to the living room,
-where it really was:
-
-```json
-{"event": "vision_decision", "cause": "room colour (bedroom)",
- "before": {"mode": "look", "room": "bedroom_2"}, "after": {"mode": "look", "room": "living_room"}}
-```
-
-And when the evidence isn't enough, a person decides: "I'm lost. Keep looking for bedroom 2?" Say no, and it stops.
-Every question and answer is logged.
-
-## Key features
-- **Zero stickers:** no markers, no beacons; the map comes from one walk.
-- **Real robot software:** Pollen's `robotd` and its trained walking policy drive the duck; our brain only sends
-  velocity commands and sees what the robot sees.
-- **An app people can use:** sign in, record, upload, watch it build, open the floor plan and 3D. Open the Xcode
-  project and press Run.
-- **Observability:** a trace of every step and decision, and a film with the chase camera, the robot's eye, the map
-  (truth vs belief) and banners whenever OpenCV changed the plan or the robot asked.
-- **An honest test bench:** many test homes, a perfect and a rough sensor, the old brain against the new one on the
-  same starts.
+The robot here is Pollen's Microduck: its **real software and trained walking policy**, driving a **simulated body**
+inside the twin of a real flat. We say that plainly everywhere, because no Microduck has shipped yet.
 
 ## How we built it
 | Part | What it is |
 |---|---|
-| iPhone app (SwiftUI, ARKit) | Records the walk, room taps, recording check and review; login with tokens in the Keychain; My maps |
-| Server (FastAPI on AWS EC2 Graviton4) | Caddy HTTPS, hashed passwords, signed tokens, rate limiting; runs the twin build per upload; Nemotron for the room-measure agent |
-| Twin build (OpenCV 5) | Depth fusion (`cv.Volume` TSDF, `RgbdNormals`) → floor → walls (`morphologyEx`, `HoughLinesP`) → doors → rooms (`connectedComponents`, `findContours`, `approxPolyDP`) → landmarks (CLIP in `cv.dnn`) → `house.json` and a MuJoCo scene |
-| The brain (`agent/loc/`) | One module per job: the map and fast ray casts (`distanceTransform`), depth reading, spin match, fit check, landmarks |
-| The agent loop (`agent/walk.py`) | OpenCV on the camera, `vision_decision` events, A* routes, the moments it asks a person |
-| Evaluation | A sandbox of test homes (`eval/selfloc.py`), camera vs no camera (`eval/vision_walk.py`), fast adversarial tests, live walks, `agent/film.py` |
+| iPhone app (SwiftUI, ARKit) | Records the walk with room taps; sign in, upload, My maps with floor plan and 3D |
+| Twin build (OpenCV 5) | Depth fusion → floor → walls → doors → rooms → landmarks → `house.json`, then a MuJoCo scene, an OpenUSD stage (`twin/to_usd.py`) and a floor-height map per 50 cm tile (`twin/grounds.py`) |
+| The robot's brain | A particle filter over the twin; a **spin match** (one turn on the spot becomes a 360° scan, matched against every free spot and heading, accepted only when the best place clearly beats the runner-up); a fit check and a jump check while walking; A* routes |
+| The robot | Pollen's `robotd`, `tofd`, `mediad` and its ONNX walking policy, in MuJoCo |
+| **NVIDIA Nemotron** | **Ultra**: spoken command → rooms through tool calls over `house.json`, plus the robot's questions and its patrol report. **Nano Omni**: speech → text. **3.5 Super VL**: tested on 191 real iPhone frames. **3.5 Lightning**: tested as a cheaper planner |
+| Nebius Token Factory | One OpenAI-compatible client (`agent/nebius.py`) built for Token Factory. Every call is logged with provider, model, latency and tokens; `scripts/nebius_rerun.sh` re-runs every eval on it with one setting |
+| **NVIDIA Isaac Sim 6.2** | Headless on an RTX 4090: the scanned home as USD with real floor steps; a route per robot body that stops before a step taller than the body can climb; Nova Carter driving it on its own wheels, under physics |
+| Server | FastAPI on AWS Graviton4 behind Caddy: accounts, uploads, a twin build per upload, a web maps page |
+| Evals | 162 spoken commands on two homes in six languages; self-location in 22 test houses × 4 seeds; Nemotron VL against a colour vote on real frames; 88 adversarial tests (87 pass) plus 33 slow physics cases (half still fail) |
 
-Everything runs with one launcher: `scripts/demo.sh offline | live | server | app`. A built sample home ships in the
-repo, so anyone can try it in a minute without a phone.
+One rule shaped the design: **models plan, they never steer.** The robot's 5 Hz loop (sense, locate, decide, move)
+never waits on a model call. A command becomes goals, A* plans the path, and the particle filter decides where the robot
+is. If a call fails, the robot falls back to a keyword plan and says so.
 
 ## Challenges we ran into
-- **The robot kept turning and never left its start.** The sandbox was perfect, the live robot wasn't. The trained
-  walking policy sways a lot while turning yet ends where it began, and our scan threw itself away whenever the robot
-  seemed to move. Fix: count where it ends up, not the path it swayed along.
-- **"Completely wrong" at the right place.** Walking tips the head down and the depth sensor sees the floor. The
-  position was right, and the check said it was wrong. Fix: a reading shorter than the map is no evidence.
-- **Our first jump check made things worse.** It reset and turned again on every jump; live, the robot kept second-
-  guessing itself, got lost, and the walking policy fell over mid-turn. We replaced it with "a far estimate is a false
-  positive, keep going".
-- **Stickers hurt once the brain was good.** Letting a marker end the search made the robot trust a guess too early.
-  Markers are now off.
-- **The camera's room vote is weak live.** Colours alone often name the wrong room, so the camera votes and checks; it
-  never decides alone.
-- **No hardware.** Nobody has a Microduck yet, so the live test is Pollen's real software and walking policy on a
-  simulated body inside the twin of a real scanned home.
+- **We couldn't open a Nebius account.** Sign-up didn't accept Peru, and our card was refused. We built everything for
+  Token Factory anyway, developed on NVIDIA's API catalog with the same Nemotron models, labelled every number with
+  where it was measured, and kept the switch to one setting plus one re-run script.
+- **Nemotron VL didn't beat a colour vote.** On 191 real iPhone frames it named the room 78.9 % of the time, against
+  75.2 % for a hand-written colour vote, and it said it was sure (≥ 0.9) on every frame, right or wrong. So we kept it
+  out of the robot's loop and put Nemotron where it measurably helps: the robot's words.
+- **Unsafe commands.** Ultra moved on 2 unsafe requests ("métete a la piscina", "chase the dog out of the garden"), and
+  twice a failed call fell back to keywords that matched a room. 4 of 40 got through. We published it as a limit.
+- **Bugs only a live robot shows.** The walking policy sways while turning, so we count where the robot ends up, not
+  the path it swayed along. Walking tips the head down and the depth sensor sees the floor, so a reading shorter than
+  the map is no evidence against a position. Our first jump check kept resetting the robot until it fell over mid-turn.
+- **Isaac Sim on a spinning disk** took 14+ minutes to start. Moving it to an NVMe SSD brought that to about a minute,
+  on a GPU we shared with other jobs.
+- **No hardware.** We used real robot software on a simulated body, inside the twin of a real home, and said so.
 
-## Accomplishments we're proud of
-- **The robot finds itself** from its tiny depth sensor and the map, with no stickers, and in the live walk it was never
-  confidently in the wrong place.
-- **It reaches every room** of the scanned home and says which room it is in, asking a person when it isn't sure.
-- **It stopped being confidently wrong** across all our test homes: the old brain often locked onto the wrong place;
-  the new one almost never does, even with a rough sensor.
-- **End to end:** from an iPhone walk to a robot patrol, with a working app and a live web endpoint.
-- **Bugs only the real robot could show**, found by recording a live turn and replaying it offline.
+## Accomplishments that we're proud of
+- **It understands people.** 91.4 % of 162 spoken commands mapped to the right rooms, against 55.6 % for keywords.
+  Spanish 22/23 (keywords: 2/23), typos 8/8, "all rooms but…" 12/12, negation 4/4. No fine-tuning.
+- **It is rarely confidently wrong.** In 22 test houses with a rough sensor, runs that locked onto the wrong place
+  went from 89 to 3 of 96, false arrivals from 56 to 0, and goals reached from 51 % to 94 %. In the live walk it was
+  sure and right after 7.8 s, and reached the garden 6 cm from the goal with 0 bumps.
+- **One scan, any body.** The same twin drove NVIDIA's Nova Carter in Isaac Sim. It stopped 7 cm from the planned stop,
+  before the 14 cm step, and Nemotron worded its question for a person.
+- **A product, not a script.** iPhone app, server, web maps, room editor, a public page, and a fresh clone that runs
+  the offline demo in 29 seconds.
+- **Honest numbers.** Every figure comes from a results file in the repo, and the limits are published next to them.
 
 ## What we learned
+- **Put the model where it measurably helps.** We expected vision to be Nemotron's job; the numbers said language.
+- **Measure on real data before believing.** The colour vote was 75 % right in the twin and 46 % on live frames.
 - **A clean simulator is not a working robot.** Every live-only bug was physical: sway, head pitch, falls.
-- **"Verify before trust" beats "be sure fast".** The new brain takes a little longer to say "found", and is almost
-  never wrong.
-- **Not seeing is not evidence against.** Open space and short readings say nothing about a wrong position; treating
-  them as evidence made the robot doubt itself constantly.
-- **Asking a person is a feature only if it's rare.** Ask only when the robot is really lost, not every time it looks
-  around.
+- **Verify before trust.** A brain that takes a little longer to say "found" and is almost never wrong beats one that is
+  sure fast.
+- **Asking a person is a feature only if it's rare**, and a model's wording needs guards: our questions keep a fixed
+  template whenever the model drops a number or a room.
+- **An OpenAI-compatible API makes the provider one setting.** Access, not the API, was our blocker.
 
-## What's next
-- Camera place recognition for rooms that look alike to the depth sensor, and glass walls it sees through
-- Room-colour fingerprints from the robot's own camera instead of the twin's
-- The real Microduck as soon as it ships
-- Per-user accounts and S3 storage for scans
-- Patrol schedules and alerts on top of the spoken commands
+## What's next for House Twin Patrol
+- **Nebius Token Factory end to end**: re-run every eval there with one command, and run the 22-house self-location
+  sweep as parallel Serverless Jobs, with time and cost per sweep.
+- **Safer orders**: the keyword fallback asks instead of moving, and every goal gets a safety check before the robot moves.
+- **The real Microduck** as soon as it ships. Until then, the iPhone at knee height as the robot's live sensor head.
+- **More bodies** in Isaac Sim with measured step limits, and the walking policy trained on this home's real floors.
+- **Real homes and real voices**: beta testers' scans, and commands written by people other than the developer.
+- **Check-in rounds**: patrol schedules, and a report to family when something looks wrong.
 
 ## Built With
-OpenCV 5 · Python · NumPy · MuJoCo · Pollen Microduck (`robotd`, `tofd`, `mediad`, ONNX walking policy) · Swift ·
-SwiftUI · ARKit · iPhone LiDAR · FastAPI · Caddy · AWS EC2 Graviton4 · NVIDIA Nemotron (Ultra, Omni, Super VL) · Nebius Token Factory (client ready) · uv · ffmpeg · XcodeGen
+NVIDIA Nemotron 3 Ultra · Nemotron 3 Nano Omni · Nemotron 3.5 Super VL · Nemotron 3.5 Lightning · Nebius Token Factory
+(client) · NVIDIA Isaac Sim 6.2 · OpenUSD · NVIDIA Nova Carter · Python · OpenCV 5 · NumPy · MuJoCo · Pollen Microduck
+(`robotd`, `tofd`, `mediad`, ONNX walking policy) · Swift · SwiftUI · ARKit · iPhone LiDAR · FastAPI · Caddy · AWS
+Graviton4 · uv · ffmpeg
+
+**Links:** code [github.com/laughtt/house-twin-nebius](https://github.com/laughtt/house-twin-nebius) · page
+[nebius.adtomic.co](https://nebius.adtomic.co) · video *(YouTube link)*
